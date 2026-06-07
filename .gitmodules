@@ -1,0 +1,15 @@
+[submodule "soarm_sdk"]
+	path = soarm_sdk
+	url = https://github.com/thanhndv212/soarm_sdk.git
+[submodule "imu_sdk"]
+	path = imu_sdk
+	url = https://github.com/thanhndv212/imu_sdk.git
+[submodule "m5teleop"]
+	path = m5teleop
+	url = https://github.com/thanhndv212/m5teleop.git
+[submodule "camera_calibration"]
+	path = camera_calibration
+	url = https://github.com/thanhndv212/camera_calibration.git
+[submodule "SO-ARM100"]
+	path = SO-ARM100
+	url = https://github.com/TheRobotStudio/SO-ARM100.git
