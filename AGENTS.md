@@ -3,20 +3,59 @@
 ## Workspace overview
 
 Five independent Python packages for the SO-ARM100 robot arm. **No root build tool** —
-each package is installed and tested independently.
+each package is installed and tested independently. Each package has its own GitHub
+remote; this repo uses **git submodules** to track them together.
 
 ```
-soarm-ws/
-├── soarm_sdk/       # SDK for Feetech STS/SCS serial bus servos (hatchling, src layout)
-├── imu_sdk/         # IMU reader for M5StickC Plus / ESP32+MPU over USB serial
-├── m5teleop/        # IMU teleoperation pipeline (ESKF → orientation controller → IK)
-├── camera_calibration/  # Camera calibration + ArUco detection (Rerun viz)
-└── SO-ARM100/       # Hardware: STL, STEP, URDF, MuJoCo simulation (read-only assets)
+soarm-ws/              ← this repo (root, tracks submodule commits)
+├── soarm_sdk/         ← git submodule → github.com/thanhndv212/soarm_sdk
+├── imu_sdk/           ← git submodule → github.com/thanhndv212/imu_sdk
+├── m5teleop/          ← git submodule → github.com/thanhndv212/m5teleop
+├── camera_calibration/← git submodule → github.com/thanhndv212/camera_calibration
+└── SO-ARM100/         ← git submodule → github.com/TheRobotStudio/SO-ARM100
 ```
 
 - All packages require Python **≥3.10** (soarm_sdk: ≥3.9).
 - `soarm_sdk` uses **hatchling** + `src/` layout. Imports are `from soarm_sdk import ...`.
 - All others use **setuptools** + flat layout.
+
+## Git workflow (submodules)
+
+### Clone
+```bash
+git clone --recurse-submodules <this-repo-url>
+```
+
+### Update all submodules to latest remote
+```bash
+git submodule update --remote --recursive
+```
+
+### Cross-repo status
+```bash
+git submodule foreach 'echo "--- $name ---" && git status -sb'
+```
+
+### Cross-repo pull
+```bash
+git submodule foreach git pull
+```
+
+### Make a change in a submodule
+```bash
+cd <submodule>
+git checkout -b my-feature
+# ... edit, commit ...
+git push origin my-feature
+cd ..
+git add <submodule>            # bump the submodule pointer
+git commit -m "bump <submodule> for <reason>"
+```
+
+### Principle
+- **Submodules are pinned at specific commits** in this repo. You control when to bump.
+- `SO-ARM100` is read-only hardware from TheRobotStudio — don't push changes to it.
+- Treat cross-package changes as: bump submodule → re-install → test.
 
 ## Install
 
