@@ -13,3 +13,6 @@
 [submodule "SO-ARM100"]
 	path = SO-ARM100
 	url = https://github.com/TheRobotStudio/SO-ARM100.git
+[submodule "soarm_learn"]
+	path = soarm_learn
+	url = https://github.com/thanhndv212/soarm_learn.git
