@@ -168,7 +168,7 @@ Added after a clarified statement of `soarm_sdk`'s actual goal: serve as an
 **real hardware or a simulation equivalent** — not a giant package forcing
 unrelated dependencies on every consumer. `m5teleop`'s `SimInterface` (viser)
 and lerobot-backed `ArmInterface` stay exactly as they are; lerobot earns its
-keep there (dataset recording, training, deployment via `soarm_learn`) and
+keep there (dataset recording, training, deployment via `soarm_lerobot`) and
 isn't being displaced. This un-gates the narrow slice of Part B that's
 specifically "the interface contract + one real-hardware implementation of
 it" — not kinematics/planning/control/execution/simulation, which stay gated
@@ -230,7 +230,7 @@ untested here, same rationale as A1: not worth mocking the full serial stack
 for the coverage gained.
 
 **Not touched, by explicit instruction:** `m5teleop`'s `SimInterface` and
-lerobot-backed `ArmInterface`, and `soarm_learn` — none of these were retyped
+lerobot-backed `ArmInterface`, and `soarm_lerobot` — none of these were retyped
 against the new `RobotInterface` Protocol. They can satisfy it structurally
 without any code change or new dependency on `soarm_sdk` if that's ever
 useful, but doing that retyping wasn't part of this pass.
@@ -250,7 +250,7 @@ unmigrated indefinitely. That's a fine outcome, not a failure to clean up.
 | `kinematics/ik_solver.py`, `limits.py` | A task needs IK against a target the mink/DAQP backend actually handles better than `m5teleop`'s existing pink+pinocchio path — not just "because it's there." Two permanent IK stacks for one 6-DOF arm is duplicated logic, not optionality, unless there's a real reason to keep both. |
 | `planning/motion_planner.py`, `RRTPlanner`, `min_jerk`/`topp_ra` generators | There's an actual non-teleop scripted-motion task to run on the real arm (e.g. autonomous pick-and-place) that `m5teleop`'s real-time cascade controller can't serve. |
 | Any of the 7 `extensions/` controllers (impedance, admittance, force, gravity-comp, pick-place, visual-servo, OSC) | One at a time, only the specific controller a real task needs — never migrate the set because it's a matched collection in the source repo. |
-| `recording/EpisodeRecorder`, `analysis/{telemetry,rerun_logger,plot_*}` | Only if `soarm_learn`'s existing recorder / whatever telemetry it has today has a specific, named gap. Check for that gap before assuming these are additive. |
+| `recording/EpisodeRecorder`, `analysis/{telemetry,rerun_logger,plot_*}` | Only if `soarm_lerobot`'s existing recorder / whatever telemetry it has today has a specific, named gap. Check for that gap before assuming these are additive. |
 | `simulation/` (MuJoCo), `execution/` (behavior trees), `ManipulationPlant` | Not until there's a multi-step task-level behavior actually running against hardware that needs sequencing beyond a single controller call. |
 | `teleop/{phone,leader_follower}_teleop.py` | Only once there's a second physical input device or leader arm to actually drive them — they're stubs today. |
 
@@ -283,7 +283,7 @@ saves re-deriving it later. **This is not a checklist to execute in one pass.**
 | `kinematics/ik_solver.py`, `limits.py`, `collision.py` | `kinematics/` | Still gated — unrelated to Part A+, which didn't touch anything under `kinematics/`. `ik_solver.py` does not hard-import `mink` at module level — lazy, only needed if the mink backend is actually selected. |
 | `planning/motion_planner.py`, `sampling/rrt_planner.py`, `trajectory_generators/{min_jerk,topp_ra}.py`, `task/task_planner.py` | `planning/` | `motion_planner.py` and `rrt_planner.py` hard-import `scipy.interpolate.CubicSpline` at module level — real new dependency, not lazy. |
 | `control/motion_executor.py`, `high_level/*.py`, `low_level/*.py` | `control/` | — |
-| `recording/recorder.py`, `replayer.py` | `recording/` | Compare against `soarm_learn.TeleopRecorder` for actual gaps before migrating. |
+| `recording/recorder.py`, `replayer.py` | `recording/` | Compare against `soarm_lerobot.TeleopRecorder` for actual gaps before migrating. |
 | `analysis/telemetry.py`, `rerun_logger.py`, `plot_*.py` | `analysis/` | `rerun_logger.py` and `plot_*.py` degrade gracefully without `rerun-sdk`/`matplotlib` installed — already lazy. |
 | `utils/loop_rate_limiters.py` | `soarm_sdk/rate_limiter.py` | ✅ **Done in Part A+.** `utils/rate_config.py` (`RateConfig`) remains gated — unrelated, belongs to the `control/` layer. |
 | `core/hardware_interface.py` (`ServoHardwareInterface`) | `soarm_sdk/hardware_interface.py` | ✅ **Done in Part A+** — resolved directly into `soarm_sdk`, settling the "open question" this row used to flag. Also dropped the redundant `RobotState` return type (see Part A+ above) and two unused imports (`GroupSyncWrite`, `STS_ACC`) carried over from the original. |

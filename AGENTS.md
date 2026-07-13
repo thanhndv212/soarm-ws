@@ -20,7 +20,7 @@ soarm-ws/              ← this repo (root, tracks submodule commits)
 ├── imu_sdk/           ← git submodule → github.com/thanhndv212/imu_sdk
 ├── m5teleop/          ← git submodule → github.com/thanhndv212/m5teleop
 ├── camera_calibration/← git submodule → github.com/thanhndv212/camera_calibration
-├── soarm_learn/       ← git submodule → github.com/thanhndv212/soarm_learn
+├── soarm_lerobot/     ← git submodule → github.com/thanhndv212/soarm_lerobot
 └── SO-ARM100/         ← git submodule → github.com/TheRobotStudio/SO-ARM100
 ```
 
@@ -74,7 +74,7 @@ pip install -e soarm_sdk/[viser]    # with 3-D dashboard deps (viser, yourdfpy, 
 pip install -e imu_sdk/
 pip install -e camera_calibration/
 pip install -e m5teleop/
-pip install -e soarm_learn/
+pip install -e soarm_lerobot/
 ```
 
 There is **no root pyproject.toml or requirements.txt**. Install each package explicitly.
@@ -119,7 +119,7 @@ Flash before using IMU:
 ## Architecture notes
 
 - **Teleop pipeline**: `teleop.py` runs a 50 Hz real-time loop: IMU data → Error-State Kalman Filter (`imu_ekf.py`) → cascade P-P quaternion orientation controller (`orient_controller.py`) → differential IK via pink+pinocchio (`ik_solver.py`) → servo commands via lerobot SOFollower (`lerobot_soarm_interface.py`).
-- **Dataset recording**: `--record` flag on `teleop.py` integrates `soarm_learn.TeleopRecorder`, which buffers frames and saves episodes as a LeRobotDataset. Episodes are delimited by BTN_A press (teleop on/off). Training data flows through `soarm_learn/dataset.py` (chunking, normalisation) into ACT or Diffusion Policy training.
+- **Dataset recording**: `--record` flag on `teleop.py` integrates `soarm_lerobot.TeleopRecorder`, which buffers frames and saves episodes as a LeRobotDataset. Episodes are delimited by BTN_A press (teleop on/off). Training data flows through `soarm_lerobot/dataset.py` (chunking, normalisation) into ACT or Diffusion Policy training.
 - **Simulation** runs in parallel with hardware: Viser 3-D browser viewer (`sim_interface.py`) and Rerun data logger (`viz.py`).
 - `SO-ARM100/Simulation/` has URDF files and MuJoCo MJCF (`scene.xml`) for physics sim.
 - Buttons on M5StickC: BTN_A toggles teleop, BTN_B toggles gripper.

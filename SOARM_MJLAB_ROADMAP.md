@@ -42,13 +42,13 @@ separation and this roadmap follows it closely. Two things are **not** copied:
 
 ## Phase 0 — Repo scaffolding & DevOps baseline — ✅ Done (local)
 
-Mirrors how `soarm_sdk`/`soarm_learn` were set up — no new conventions invented.
+Mirrors how `soarm_sdk`/`soarm_lerobot` were set up — no new conventions invented.
 
 - [x] New local git repo at `soarm-ws/soarm_mjlab/`, default branch `main`.
       **Not yet** pushed to a GitHub remote or added as a `soarm-ws`
       submodule pointer — that's an external/shared-state action, held for
       explicit go-ahead rather than done as a side effect of "start".
-- [x] `pyproject.toml`: setuptools + flat layout (matches `soarm_learn`'s
+- [x] `pyproject.toml`: setuptools + flat layout (matches `soarm_lerobot`'s
       convention, not `soarm_sdk`'s hatchling/`src` one — this package is
       closer in kind to the training-side packages). **Hard-pinned**
       `mjlab==1.5.0` / `mujoco-warp==3.10.0.2` — verified installing
@@ -56,7 +56,7 @@ Mirrors how `soarm_sdk`/`soarm_learn` were set up — no new conventions invente
       mujoco 3.10.0, warp-lang 1.15.0, rsl-rl-lib, tyro, viser, wandb).
       Unitree's reference repo pinned older versions (1.2.0/3.5.0); these
       are current-latest-verified, not a copy of theirs.
-- [x] `ruff` — no repo-level override, same as `soarm_learn`, so defaults
+- [x] `ruff` — no repo-level override, same as `soarm_lerobot`, so defaults
       (88-char) match `soarm_sdk`'s too.
 - [x] `LICENSE` (MIT), `CHANGELOG.md`, `py.typed`.
 - [x] `.github/workflows/ci.yml` — one `fast` job for now (lint + pytest);

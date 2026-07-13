@@ -17,12 +17,12 @@ soarm-ws/
 ├── soarm_sdk/           servo transport + register-level control (Feetech STS/SCS)
 ├── imu_sdk/             IMU transport + firmware (M5StickC / ESP32 + MPU)
 ├── m5teleop/            teleoperation pipeline — the integration point
-├── soarm_learn/         dataset recording + imitation-learning training
+├── soarm_lerobot/       dataset recording + imitation-learning training
 ├── camera_calibration/  standalone camera intrinsics / ArUco tooling
 └── SO-ARM100/           read-only hardware repo (URDF, MJCF, CAD) from TheRobotStudio
 ```
 
-Five of the six packages (`soarm_sdk`, `imu_sdk`, `m5teleop`, `soarm_learn`,
+Five of the six packages (`soarm_sdk`, `imu_sdk`, `m5teleop`, `soarm_lerobot`,
 `camera_calibration`) are real, importable Python packages installed with
 `pip install -e`. `SO-ARM100` is not Python — it's the hardware vendor's repo,
 vendored in for its URDF/MJCF robot models and used read-only.
@@ -45,7 +45,7 @@ vendored in for its URDF/MJCF robot models and used read-only.
         └───────────┬──────────────┘
                      │ optional: --record flag
                      ▼
-              soarm_learn
+              soarm_lerobot
         (TeleopRecorder buffers frames →
          LeRobotDataset; dataset.py feeds
          ACT / Diffusion Policy training)
@@ -66,7 +66,7 @@ Notes on this graph:
   homing, and PID tuning — it is not currently wired into the teleop loop.
   Treat them as two independent ways to talk to the same Feetech servo bus,
   not as a dependency chain.
-- `soarm_learn`'s `TeleopRecorder` import in `teleop.py` is wrapped in a
+- `soarm_lerobot`'s `TeleopRecorder` import in `teleop.py` is wrapped in a
   `try/except ImportError` — recording is an optional add-on, not a hard
   dependency of teleop.
 - `soarm_sdk`'s own README documents a `fullstack_manip/core/hardware_interface.py`
@@ -148,9 +148,9 @@ cascade-controller design).
 
 - **Buttons**: BTN_A toggles teleop on/off (also delimits recorded episodes),
   BTN_B toggles the gripper.
-- **`--record` flag** hooks in `soarm_learn.TeleopRecorder` to buffer frames
+- **`--record` flag** hooks in `soarm_lerobot.TeleopRecorder` to buffer frames
   and write LeRobotDataset episodes alongside the live control loop, gated by
-  an optional import so teleop works without `soarm_learn`/`lerobot`
+  an optional import so teleop works without `soarm_lerobot`/`lerobot`
   installed.
 - **`tune_ekf.py`** is a separate offline tool: record a stationary IMU
   session, then grid-search (and optionally scipy fine-tune) the ESKF noise
@@ -160,7 +160,7 @@ cascade-controller design).
   read this before touching the EKF or orientation controller, it documents
   *why* each parameter has its current value.
 
-### `soarm_learn` — dataset recording + imitation learning
+### `soarm_lerobot` — dataset recording + imitation learning
 
 Flat layout, depends on `torch`, `lerobot`, `datasets`.
 
@@ -214,11 +214,11 @@ here). Supplies the robot description consumed by two other packages:
   `ArmInterface` in `lerobot_soarm_interface.py`, not `soarm_sdk` directly.
 - **Config centralization.** Each package that has runtime-tunable behavior
   keeps it in one `config.py` (`m5teleop/m5teleop/config.py`,
-  `soarm_learn/soarm_learn/config.py`) rather than scattering constants.
+  `soarm_lerobot/soarm_lerobot/config.py`) rather than scattering constants.
 - **Rerun as the universal viewer.** Both `m5teleop` (`viz.py`) and
   `camera_calibration` (`_viz.py`) standardize on Rerun for live
   visualization/logging instead of ad hoc GUI windows.
 - **Optional imports for optional hardware/features.** Patterns like
-  `try: from soarm_learn import TeleopRecorder / except ImportError` appear
+  `try: from soarm_lerobot import TeleopRecorder / except ImportError` appear
   wherever a feature (recording, magnetometer data, viser extras) is
   optional — check for this before assuming a dependency is required.
