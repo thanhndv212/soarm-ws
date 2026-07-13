@@ -1,5 +1,13 @@
 # AGENTS.md
 
+## Session Start Protocol
+
+At the start of every session, load project context:
+```bash
+python3 ~/.config/opencode/skills/brain/scripts/brain.py context /Users/thanhndv212/Develop/soarm-ws
+```
+This surfaces relevant facts, learnings, and open tasks from 365 past sessions. Use this knowledge to avoid repeating past mistakes and to build on established patterns.
+
 ## Workspace overview
 
 Five independent Python packages for the SO-ARM100 robot arm. **No root build tool** —
