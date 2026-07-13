@@ -16,3 +16,6 @@
 [submodule "soarm_learn"]
 	path = soarm_learn
 	url = https://github.com/thanhndv212/soarm_learn.git
+[submodule "soarm_mjlab"]
+	path = soarm_mjlab
+	url = https://github.com/thanhndv212/soarm_mjlab.git
