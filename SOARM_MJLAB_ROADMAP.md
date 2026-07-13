@@ -40,32 +40,49 @@ separation and this roadmap follows it closely. Two things are **not** copied:
    locomotion-specific and get dropped from the base config, not carried over
    as unused scaffolding.
 
-## Phase 0 — Repo scaffolding & DevOps baseline — ✅ Done (local)
+## Phase 0 — Repo scaffolding & DevOps baseline — ✅ Done
 
-Mirrors how `soarm_sdk`/`soarm_lerobot` were set up — no new conventions invented.
+Mirrors how `soarm_sdk`/`soarm_lerobot` were set up, except for install
+tooling (below) — no other new conventions invented.
 
-- [x] New local git repo at `soarm-ws/soarm_mjlab/`, default branch `main`.
-      **Not yet** pushed to a GitHub remote or added as a `soarm-ws`
-      submodule pointer — that's an external/shared-state action, held for
-      explicit go-ahead rather than done as a side effect of "start".
+- [x] New GitHub repo `thanhndv212/soarm_mjlab` (public), added to `soarm-ws`
+      as a git submodule.
 - [x] `pyproject.toml`: setuptools + flat layout (matches `soarm_lerobot`'s
       convention, not `soarm_sdk`'s hatchling/`src` one — this package is
-      closer in kind to the training-side packages). **Hard-pinned**
-      `mjlab==1.5.0` / `mujoco-warp==3.10.0.2` — verified installing
-      together cleanly on macOS arm64 (full dep tree: torch 2.13.0,
-      mujoco 3.10.0, warp-lang 1.15.0, rsl-rl-lib, tyro, viser, wandb).
-      Unitree's reference repo pinned older versions (1.2.0/3.5.0); these
-      are current-latest-verified, not a copy of theirs.
+      closer in kind to the training-side packages).
+- [x] **Install tooling: `uv`, not pip** — the one package in `soarm-ws`
+      that installs this way. Reason: `mjlab` itself gates `torch` behind
+      mutually-exclusive `cpu`/`cu128` extras routed to different package
+      indices (CPU vs CUDA wheels via `[tool.uv.sources]`), which pip has
+      no equivalent for short of hand-juggling `--extra-index-url`. Our
+      own `pyproject.toml` forwards the same two extra names to
+      `mjlab[cpu]`/`mjlab[cu128]`, mirrors mjlab's source-routing (gated on
+      our own extras — `[tool.uv.sources]` doesn't propagate from a
+      dependency's own pyproject.toml), and declares `[tool.uv.conflicts]`
+      so both can't be selected together (verified: `uv sync --extra cpu
+      --extra cu128` correctly errors). `mujoco-warp==3.10.0.2` stays an
+      explicit hard pin (documented intent, matching mjlab's own `~=3.10.0`
+      tightened); `uv.lock` is committed and pins the *entire* resolved
+      tree on top of that — the actual reproducibility guarantee, stronger
+      than the Phase-0-original two hand-picked pins.
+- [x] `Makefile` (`sync`, `sync-cpu`, `lint`, `test`, `test-cpu`, `check`),
+      copied down from mjlab's own to the subset we actually need (no
+      docs/build/publish targets — not a published library).
 - [x] `ruff` — no repo-level override, same as `soarm_lerobot`, so defaults
       (88-char) match `soarm_sdk`'s too.
 - [x] `LICENSE` (MIT), `CHANGELOG.md`, `py.typed`.
-- [x] `.github/workflows/ci.yml` — one `fast` job for now (lint + pytest);
-      the `train-smoke` second job is added in Phase 1 once `scripts/train.py`
-      and the Reach task exist to smoke-test.
+- [x] `.github/workflows/ci.yml` — `astral-sh/setup-uv` + `uv sync --locked
+      --extra cpu --group dev` (fails the build on lockfile drift) + lint +
+      `pytest`. One `fast` job for now; the `train-smoke` second job is
+      added in Phase 1 once `scripts/train.py` and the Reach task exist to
+      smoke-test.
 
-**Exit criteria:** ✅ `pip install -e ".[dev]"` succeeds in a clean venv;
-`ruff check soarm_mjlab tests` and `pytest` both pass on the
-empty-but-structured package (1 sanity test: package imports).
+**Exit criteria:** ✅ `uv sync --extra cpu --group dev` (`make sync-cpu`)
+succeeds in a clean environment; `uv run ruff check soarm_mjlab tests` and
+`uv run pytest` both pass on the empty-but-structured package (1 sanity
+test: package imports). Verified locally on macOS arm64 — the Linux
+CUDA/CPU index-routing half of `[tool.uv.sources]` is exercised for the
+first time by CI itself (`ubuntu-latest`), not verified on the dev machine.
 
 ## Phase 1 — Sample task MVP: "Reach"
 
