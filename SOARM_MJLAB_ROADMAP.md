@@ -1,10 +1,8 @@
 # soarm_mjlab Roadmap
 
-Status (2026-07-14): **Phase 0 done**, local-only (new repo at
-`soarm-ws/soarm_mjlab/`, not yet pushed to a GitHub remote or wired in as a
-submodule — see the note at the end of Phase 0 below). Written after
-reading `unitree_rl_mjlab` (a real mjlab application repo) end to end; see
-that repo's `src/tasks/velocity/` for the pattern this roadmap adapts.
+Status (2026-07-18): **Phases 0–3 done.** Written after reading
+`unitree_rl_mjlab` (a real mjlab application repo) end to end; see that
+repo's `src/tasks/velocity/` for the pattern this roadmap adapts.
 
 Serendipitous finding while verifying Phase 0: `mjlab` itself ships a
 built-in `mjlab.tasks.manipulation` task (`Mjlab-Lift-Cube-Yam`) — an actual
@@ -84,34 +82,36 @@ test: package imports). Verified locally on macOS arm64 — the Linux
 CUDA/CPU index-routing half of `[tool.uv.sources]` is exercised for the
 first time by CI itself (`ubuntu-latest`), not verified on the dev machine.
 
-## Phase 1 — Sample task MVP: "Reach"
+## Phase 1 — Sample task MVP: "Reach" — ✅ Done
 
 Directory layout (mirrors `unitree_rl_mjlab`'s `src/tasks/velocity/` shape,
-scaled down to one task):
+scaled down to one task; flat `soarm_mjlab/` package, not `src/` — matches
+Phase 0's actual setuptools layout, not the `src/` sketch originally drafted
+here):
 
 ```
 soarm_mjlab/
 ├── pyproject.toml
 ├── CHANGELOG.md
 ├── .github/workflows/ci.yml
-├── src/soarm_mjlab/
+├── soarm_mjlab/
 │   ├── __init__.py
+│   ├── _mjlab_compat.py              # works around an mjlab==1.5.0 num_envs>1 bug
 │   ├── assets/robots/so_arm100/
 │   │   ├── __init__.py
-│   │   └── so_arm100_constants.py   # MJCF from SO-ARM100 submodule, actuator cfg
-│   │                                 #   (stiffness/damping seeded from soarm_sdk's
-│   │                                 #   configs/soarm100.yaml so sim gains and real
-│   │                                 #   PID gains start from the same source), home
-│   │                                 #   keyframe, collision cfg.
+│   │   ├── so_arm100_constants.py    # actuator cfg (STS3215 gains, from the MJCF's
+│   │   │                             #   own sts3215 default class — soarm_sdk's
+│   │   │                             #   configs/soarm100.yaml has no PID gains to
+│   │   │                             #   seed from, contra the original plan below),
+│   │   │                             #   home keyframe, collision cfg.
+│   │   └── xmls/                     # MJCF + meshes vendored from SO-ARM100/Simulation/SO101
 │   ├── tasks/reach/
 │   │   ├── __init__.py
 │   │   ├── reach_env_cfg.py          # make_reach_env_cfg() factory
 │   │   ├── mdp/
-│   │   │   ├── observations.py       # joint_pos_rel, joint_vel_rel, ee_pose_error,
-│   │   │   │                         #   target_pose
-│   │   │   ├── rewards.py            # distance_to_target, action_rate_l2,
-│   │   │   │                         #   joint_pos_limits
-│   │   │   ├── terminations.py       # time_out, task_success, joint_limit_violated
+│   │   │   ├── observations.py       # ee_pose_error
+│   │   │   ├── rewards.py            # distance_to_target
+│   │   │   ├── terminations.py       # task_success, joint_limit_violated
 │   │   │   └── commands.py           # UniformPoseCommand — random reachable target
 │   │   ├── rl/runner.py
 │   │   └── config/so_arm100/
@@ -122,26 +122,41 @@ soarm_mjlab/
 │   ├── train.py                      # thin: mirrors unitree_rl_mjlab's train.py
 │   ├── play.py
 │   └── list_envs.py
-├── deploy/
-│   └── reach_policy_runner.py        # loads checkpoint, drives soarm_sdk.RobotInterface
+├── deploy/                           # reach_policy_runner.py — Phase 5, not yet
 └── tests/                            # see Phase 2
 ```
 
 Task definition: target end-effector pose sampled uniformly within a
-reachable-workspace box (derived from joint limits + FK, not hand-picked);
-episode ends on `task_success` (distance below threshold for N consecutive
-steps), `time_out`, or `joint_limit_violated`. Reward = negative pose error +
-`action_rate_l2` + `joint_pos_limits` penalty — deliberately the smallest
-reward set that produces a non-degenerate policy, more terms added only if
-the trained policy shows a specific failure mode (jerky motion, limit
-slamming) that a specific term fixes.
+reachable-workspace box (derived from joint limits + FK via a throwaway
+compiled model in `config/so_arm100/env_cfgs.py`, not hand-picked); episode
+ends on `task_success` (distance below threshold for N consecutive steps),
+`time_out`, `joint_limit_violated`, or `ee_ground_collision`. Reward =
+negative position error (`distance_to_target`) + `action_rate_l2` +
+`joint_pos_limits` penalty — deliberately the smallest reward set that
+produces a non-degenerate policy; orientation error is sampled and observed
+but not yet scored (`orientation_weight=0.0` — a 0-weighted target gives the
+policy no incentive to satisfy it, so raise it deliberately before relying
+on it, not as a silent default).
 
-**Exit criteria:** `python scripts/train.py SoArm100-Reach --env.scene.num-envs=4
---agent.max-iterations=2` runs to completion with no exceptions and a
-non-NaN reward curve. This is not "the policy works" — it's "the pipeline
-doesn't crash," which is the correct Phase 1 bar; policy quality is Phase 4.
+**Exit criteria:** ✅ `python scripts/train.py SoArm100-Reach
+--env.scene.num-envs=4 --agent.max-iterations=2 --gpu-ids None` runs to
+completion with no exceptions and a non-NaN reward curve (`--gpu-ids None`
+needed on this dev machine — no CUDA device, and the default assumes GPU 0
+exists). Verified on macOS arm64 (CPU only). This is not "the policy
+works" — it's "the pipeline doesn't crash," which is the correct Phase 1
+bar; policy quality is Phase 4.
 
-## Phase 2 — Testing & validation strategy
+Found and fixed one real bug along the way, not specific to Reach: mjlab
+1.5.0 crashes on reset with `num_envs > 1` for any entity whose joint
+limits are never touched by a domain-randomization event (reproduces on
+mjlab's own bundled `Mjlab-Lift-Cube-Yam` task, not just SO-ARM100) —
+`mujoco_warp` keeps such fields at a broadcastable `(1, ...)` shape until
+DR'd, and `Entity.initialize` doesn't broadcast to `nworld` before slicing
+per-env. Worked around in `soarm_mjlab/_mjlab_compat.py`, applied
+automatically on `import soarm_mjlab.tasks`; safe to delete once mjlab
+ships a fix.
+
+## Phase 2 — Testing & validation strategy — ✅ Done (layers 1–4)
 
 A standard test pyramid, shaped by one constraint: real physics simulation
 and GPU training cannot run in CI. Each layer is scoped so everything except
@@ -162,36 +177,56 @@ hardware until it clears a stated numeric bar on held-out random seeds (e.g.
 ≥90% `task_success` over 100 eval episodes) — decided when Phase 4 is
 reached, not guessed now.
 
-**Exit criteria:** `tests/test_mdp_reach.py`, `test_asset_so_arm100.py`,
-`test_env_reach.py`, `test_train_smoke.py` all exist and pass; CI is red if
-any of layers 1–4 breaks.
+**Exit criteria:** ✅ `tests/test_mdp_reach.py`, `test_asset_so_arm100.py`,
+`test_env_reach.py`, `test_train_smoke.py` all exist and pass (24 tests,
+~17s locally); CI is red if any of layers 1–4 breaks — no workflow changes
+needed, the existing `fast` job (`FORCE_CPU=1 uv run pytest`) already picks
+all four up. `tests/conftest.py` adds a `FORCE_CPU`-aware `get_test_device()`
+helper, matching mjlab's own test convention.
 
-## Phase 3 — CI/CD
+Layer 4 (`test_train_smoke.py`) runs `scripts/train.py` as a real subprocess
+(not an in-process call) in a `tmp_path` cwd, so it also exercises tyro CLI
+parsing and confirms a checkpoint + ONNX export land on disk —
+`--agent.logger tensorboard` avoids a real W&B run per test invocation
+(training with the default `wandb` logger, as done manually while verifying
+Phase 1, actually pushes a run to the configured W&B account).
+
+## Phase 3 — CI/CD — ✅ Done
 
 Two jobs, deliberately not one, because they have different failure
 semantics:
 
-- **`fast` job** (blocks merge): `ruff check src tests`, then test layers
-  1–4 above, on a standard CPU GitHub-hosted runner. Every PR, every push.
-  If this is red, the PR does not merge — same bar as `soarm_sdk`'s existing
-  CI.
-- **`train-smoke` / `nightly-eval` job** (does not block merge): optionally
-  runs a slightly longer training slice (more iterations, still small) on a
-  schedule or manual dispatch, on a GPU-capable runner if one exists;
-  uploads the checkpoint + tensorboard log as a build artifact. Failing
-  this flags a regression worth investigating, but a PR isn't blocked
-  waiting on an hours-long run.
+- **`fast` job** (blocks merge): `ruff check soarm_mjlab tests`, then test
+  layers 1–4 above, on a standard CPU GitHub-hosted runner. Triggered on
+  `push`/`pull_request` only — every PR, every push. If this is red, the PR
+  does not merge — same bar as `soarm_sdk`'s existing CI. (Already existed
+  from Phase 0; Phases 1–2 are what gave it Reach code and tests to
+  actually lint/run.)
+- **`train-smoke` job** (does not block merge): a longer-but-still-small PPO
+  slice (`num-envs=16`, `max-iterations=20`, ~15s locally) than the `fast`
+  job's own 2-iteration smoke test, uploading the checkpoint + tensorboard
+  log as a build artifact. Triggered on `schedule` (nightly, 03:00 UTC) or
+  `workflow_dispatch` only — structurally cannot run on a PR, so it cannot
+  gate a merge, without needing any branch-protection configuration. Runs
+  on `ubuntu-latest`: no GPU-capable runner is configured for this repo,
+  so the roadmap's "if one exists" doesn't apply yet — revisit if/when one
+  does.
 
-Also: every training run (Phase 4/5, not CI) dumps its fully-resolved
-`env.yaml`/`agent.yaml` plus the git commit hash into the log directory —
-copying `unitree_rl_mjlab`'s `dump_yaml(log_dir / "params" / ...)` pattern —
-so any checkpoint is traceable back to the exact config and code that
-produced it. This matters specifically because config drift between "what
-trained the policy" and "what's running now" is the most common source of a
-policy that worked in one run and silently doesn't in the next.
+Also: every training run dumps its fully-resolved `env.yaml`/`agent.yaml`
+(via `dump_yaml`, copying `unitree_rl_mjlab`'s pattern) plus a
+`git/soarm_mjlab.diff` file with the commit hash, `git status`, and full
+diff (via `runner.add_git_repo_to_log(__file__)`, an existing `rsl_rl`
+runner feature) into the log directory — already wired up in
+`scripts/train.py` since Phase 1, not new work here. So any checkpoint,
+including the ones `train-smoke` uploads, is traceable back to the exact
+config and code that produced it. This matters specifically because config
+drift between "what trained the policy" and "what's running now" is the
+most common source of a policy that worked in one run and silently doesn't
+in the next.
 
-**Exit criteria:** a PR that breaks a reward function's return shape fails
-CI within the `fast` job, in under ~2 minutes, without needing a GPU.
+**Exit criteria:** ✅ a PR that breaks a reward function's return shape
+fails CI within the `fast` job (verified via the layer-1/2/3 tests added in
+Phase 2), in under ~2 minutes, without needing a GPU.
 
 ## Phase 4 — Real training run & promotion criteria
 
