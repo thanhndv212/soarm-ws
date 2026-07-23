@@ -1,8 +1,17 @@
 # soarm_mjlab Roadmap
 
-Status (2026-07-18): **Phases 0–3 done.** Written after reading
-`unitree_rl_mjlab` (a real mjlab application repo) end to end; see that
-repo's `src/tasks/velocity/` for the pattern this roadmap adapts.
+Status (2026-07-23): **Phases 0–3 done. Phase 4 in progress** —
+tooling (vast.ai remote training guide, HF Hub publish script) and the first
+real training campaign (11 runs, v1–v11, on a rented vast.ai RTX 3090) are
+done; the best checkpoint (v9, ~30% episode success / ~0.04 m position error)
+did **not** clear the stated ≥90% promotion bar, so Phase 4 stays open until
+a later campaign does. See `soarm_mjlab/docs/vast_ai_training.md` (how to
+rent/run/retrieve) and `soarm_mjlab/docs/reach_training_debug_log_v1_v11.md`
+(the v1–v11 tuning case study) for the artifacts this phase produced.
+
+Written after reading `unitree_rl_mjlab` (a real mjlab application repo) end
+to end; see that repo's `src/tasks/velocity/` for the pattern this roadmap
+adapts.
 
 Serendipitous finding while verifying Phase 0: `mjlab` itself ships a
 built-in `mjlab.tasks.manipulation` task (`Mjlab-Lift-Cube-Yam`) — an actual
@@ -58,11 +67,14 @@ tooling (below) — no other new conventions invented.
       our own extras — `[tool.uv.sources]` doesn't propagate from a
       dependency's own pyproject.toml), and declares `[tool.uv.conflicts]`
       so both can't be selected together (verified: `uv sync --extra cpu
-      --extra cu128` correctly errors). `mujoco-warp==3.10.0.2` stays an
+      --extra cu128` correctly errors). `mujoco-warp==3.10.0.3` stays an
       explicit hard pin (documented intent, matching mjlab's own `~=3.10.0`
       tightened); `uv.lock` is committed and pins the *entire* resolved
       tree on top of that — the actual reproducibility guarantee, stronger
-      than the Phase-0-original two hand-picked pins.
+      than the Phase-0-original two hand-picked pins. (Pins re-bumped once
+      during Phase 4: `mjlab 1.5.0→1.5.3`, `mujoco-warp 3.10.0.2→3.10.0.3`,
+      which landed the upstream fix for the `num_envs>1` bug the Phase 1
+      compat shim worked around — see Phase 1.)
 - [x] `Makefile` (`sync`, `sync-cpu`, `lint`, `test`, `test-cpu`, `check`),
       copied down from mjlab's own to the subset we actually need (no
       docs/build/publish targets — not a published library).
@@ -96,7 +108,7 @@ soarm_mjlab/
 ├── .github/workflows/ci.yml
 ├── soarm_mjlab/
 │   ├── __init__.py
-│   ├── _mjlab_compat.py              # works around an mjlab==1.5.0 num_envs>1 bug
+│   ├── _mjlab_compat.py              # (deleted in Phase 4 — mjlab 1.5.3 fixed the bug)
 │   ├── assets/robots/so_arm100/
 │   │   ├── __init__.py
 │   │   ├── so_arm100_constants.py    # actuator cfg (STS3215 gains, from the MJCF's
@@ -153,8 +165,11 @@ mjlab's own bundled `Mjlab-Lift-Cube-Yam` task, not just SO-ARM100) —
 `mujoco_warp` keeps such fields at a broadcastable `(1, ...)` shape until
 DR'd, and `Entity.initialize` doesn't broadcast to `nworld` before slicing
 per-env. Worked around in `soarm_mjlab/_mjlab_compat.py`, applied
-automatically on `import soarm_mjlab.tasks`; safe to delete once mjlab
-ships a fix.
+automatically on `import soarm_mjlab.tasks`. **Resolved in Phase 4**: the
+upstream fix landed in `mjlab 1.5.3` / `mujoco-warp 3.10.0.3`, so the shim
+was deleted (commit `8c56a77`) and the pins bumped to match — the guard
+was a no-op once the tensors were already broadcast to `nworld`, so removal
+was behavior-preserving.
 
 ## Phase 2 — Testing & validation strategy — ✅ Done (layers 1–4)
 
@@ -201,16 +216,24 @@ semantics:
   `push`/`pull_request` only — every PR, every push. If this is red, the PR
   does not merge — same bar as `soarm_sdk`'s existing CI. (Already existed
   from Phase 0; Phases 1–2 are what gave it Reach code and tests to
-  actually lint/run.)
+  actually lint/run.) Runs with `MUJOCO_GL=disabled` (added in Phase 4,
+  commit `b5d3c7a`) so the headless Linux runner doesn't try to open a
+  render context the test layers don't need.
 - **`train-smoke` job** (does not block merge): a longer-but-still-small PPO
   slice (`num-envs=16`, `max-iterations=20`, ~15s locally) than the `fast`
   job's own 2-iteration smoke test, uploading the checkpoint + tensorboard
-  log as a build artifact. Triggered on `schedule` (nightly, 03:00 UTC) or
-  `workflow_dispatch` only — structurally cannot run on a PR, so it cannot
-  gate a merge, without needing any branch-protection configuration. Runs
-  on `ubuntu-latest`: no GPU-capable runner is configured for this repo,
-  so the roadmap's "if one exists" doesn't apply yet — revisit if/when one
-  does.
+  log as a build artifact. Triggered on `push` to `main`/`master`
+  (post-merge), `release` (`published`), or `workflow_dispatch` — never on
+  `pull_request`, so it structurally cannot gate a merge without needing
+  any branch-protection configuration. (Changed in Phase 4, commit
+  `9b8ae84`, from the original nightly-`schedule` trigger to push/release:
+  a nightly cron was too slow to catch a reward-curve regression — a broken
+  merge would land and the signal wouldn't arrive until the next 03:00 UTC
+  run — whereas post-merge push catches it within minutes. The `pull_request`
+  exclusion is preserved so it still can't block the merge itself.) Runs
+  on `ubuntu-latest` with `MUJOCO_GL=disabled`: no GPU-capable runner is
+  configured for this repo, so the roadmap's "if one exists" doesn't apply
+  yet — revisit if/when one does.
 
 Also: every training run dumps its fully-resolved `env.yaml`/`agent.yaml`
 (via `dump_yaml`, copying `unitree_rl_mjlab`'s pattern) plus a
@@ -228,22 +251,108 @@ in the next.
 fails CI within the `fast` job (verified via the layer-1/2/3 tests added in
 Phase 2), in under ~2 minutes, without needing a GPU.
 
-## Phase 4 — Real training run & promotion criteria
+## Phase 4 — Real training run & promotion criteria — 🔄 In progress
 
-This is manual/GPU work, not something to script into CI:
+This is manual/GPU work, not something to script into CI. Two halves:
+**tooling** (done) and the **training campaign itself** (first campaign
+done, did not clear the bar — stays open).
 
-- [ ] Run `scripts/train.py SoArm100-Reach` with real hyperparameters
-      (`num_envs` in the thousands, full `max_iterations`) on a GPU machine.
-- [ ] Track reward curve + task-specific metrics (success rate, mean
-      time-to-target) via tensorboard.
-- [ ] Define the promotion bar *before* the run finishes, not after looking
-      at the number (avoids moving the goalposts to match whatever the run
-      produced) — e.g. ≥90% success over 100 held-out-seed eval episodes,
-      average joint-limit violations near zero.
-- [ ] `scripts/play.py` to visually inspect rollouts in the MuJoCo viewer
-      before touching layer 6/7.
+### Tooling — ✅ Done (commit `cd37606`, 2026-07-19)
+
+- [x] **`docs/vast_ai_training.md`** — end-to-end guide to running a real
+      training run on a rented vast.ai GPU: instance selection (RTX 3090/
+      4090 tier — this task has no vision and a tiny MLP, so A100/H100 is
+      wasted compute), cost (~$0.30–0.60/hr interruptible for a 4090,
+      mid-2026), one-time remote setup (`scripts/setup_remote.sh` installs
+      `uv`, clones the repo, `uv sync --extra cu128`), W&B auth, launching
+      training inside `tmux` (SSH sessions drop — a multi-hour run must not
+      die with them), live monitoring via W&B or a tensorboard SSH tunnel,
+      retrieving the checkpoint (auto-uploaded to W&B, or `scp`), local
+      sim playback, publishing to the HF Hub, and shutting the instance
+      down (destroy, not stop — stopped instances still bill for disk).
+      Written so the rented box only ever needs `soarm_mjlab` itself (the
+      MJCF + meshes are vendored in-repo, no cross-submodule references at
+      runtime), not the full `soarm-ws` monorepo.
+- [x] **`scripts/setup_remote.sh`** — the one-time setup the guide
+      references: `curl`-installs `uv`, clones `soarm_mjlab`, runs
+      `uv sync --locked --extra cu128 --group dev`. Idempotent.
+- [x] **`scripts/push_to_hub.py`** — publishes a promoted checkpoint to the
+      Hugging Face Hub: downloads the ONNX export + configs from a W&B run
+      (or a local `--run-dir`), generates a model card with training
+      provenance (iteration count, `num_envs`, git commit, W&B run URL),
+      pushes `policy.onnx` + `model.pt` + `env.yaml`/`agent.yaml` +
+      `README.md` to a new or existing HF model repo. Deliberately a manual
+      publish (only once a checkpoint clears the promotion bar), not an
+      automatic upload on every checkpoint — unlike the W&B upload, which
+      is automatic and happens every `save_interval`.
+- [x] **Promotion bar defined *before* the run finished** (in
+      `vast_ai_training.md` step 7, not after looking at the number):
+      `Metrics/ee_pose/episode_success` ≥ 0.90 over the last ~100 logged
+      episodes, `Episode_Termination/joint_limit_violated` ≈ 0,
+      `Metrics/ee_pose/position_error` small relative to the target box.
+      Stated up front so it can't quietly move to match whatever the run
+      produced.
+
+### First training campaign (v1–v11) — ✅ Done; did not clear the bar
+
+- [x] Ran `scripts/train.py SoArm100-Reach` with real hyperparameters
+      (`num_envs=4096`, `max_iterations=1500`) on a rented vast.ai RTX 3090
+      — 11 runs (v1–v11), tracked via W&B (project `mjlab`, entity
+      `thanhndv212-thanh-nguyen`). Full tuning history recorded in
+      `docs/reach_training_debug_log_v1_v11.md` as a debugging case study
+      so future campaigns start from here instead of re-discovering the
+      same failure modes.
+- [x] `scripts/play.py` used to visually inspect rollouts in the MuJoCo
+      viewer locally on the MacBook (checkpoint pulled straight from W&B,
+      no manual `scp`).
+
+**Outcome:** the policy went from **0% success** (v1, a unit/scale bug —
+action scale so small the arm physically couldn't reach the targets) to a
+stable **~30% episode success / ~0.04 m position error** plateau (v9, the
+best checkpoint of the session). The biggest single win was v8: fixing the
+reachable-workspace mismatch — `_compute_reachable_workspace` sampled target
+poses from the *full hard joint-limit range*, but the policy's action range
+is capped at `home ± action_scale`, so a meaningful fraction of the target
+box was physically unreachable regardless of training quality. Tightening
+the FK sampling range to `[home - scale, home + scale]` doubled success and
+cut position error 40%.
+
+**This did not clear the ≥90% bar.** That's a Phase 4 finding, not a reason
+to lower the bar after the fact — the ~0.03–0.04 m position-error plateau
+reproduced identically at 56× the data (v11: `num_envs=230,000`, 7.6 B total
+env steps, ~2 h 35 m on the 3090), confirming it's a robust limit of the
+current reward/action setup, not a "just needs more samples" problem. The
+debug log's "Open leads" section lists four untested hypotheses for pushing
+past it (joint-vel observation noise, two-scale reward shaping, LR/action-
+scale annealing, performance-gated curriculum) — none tried yet.
+
+| | v1 (broken baseline) | v9 (best) |
+|---|---|---|
+| `episode_success` | 0% | ~30% (avg), 75% (peak) |
+| `position_error` | 0.34 m | 0.03–0.04 m |
+| `orientation_error` | 2.12 rad | 0.7 rad (untracked by success — harmless) |
+| `mean_reward` | -8.33 | +59 (not directly comparable — reward terms changed) |
+
+Best checkpoint: v9, W&B run
+[`thanhndv212-thanh-nguyen/mjlab/y4bomfz3`](https://wandb.ai/thanhndv212-thanh-nguyen/mjlab/runs/y4bomfz3),
+`model_1499.pt`.
+
+### Remaining (still open)
+
+- [ ] A later campaign that clears the ≥90% promotion bar — starting from
+      the v9 config and the debug log's open leads, not from scratch.
+- [ ] Only then: `scripts/push_to_hub.py` to publish the promoted checkpoint
+      to the HF Hub (the script exists and is tested, but has not been run
+      against a real promoted checkpoint yet — no checkpoint has cleared
+      the bar to promote).
 
 ## Phase 5 — Sim2real deployment via RobotInterface
+
+Gated on Phase 4's remaining work: no checkpoint has cleared the ≥90%
+promotion bar yet, so there is nothing to deploy. The v9 checkpoint (~30%
+success) is good enough to *develop* the deploy script against (it moves
+the arm meaningfully), but not good enough to *validate* sim2real on —
+doing so would test the deployment plumbing, not a policy worth deploying.
 
 - [ ] `deploy/reach_policy_runner.py`: loads the promoted checkpoint (ONNX
       export or raw torch), implements a `SimRobotInterface`-shaped
