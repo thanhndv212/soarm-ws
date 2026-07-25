@@ -6,8 +6,8 @@ real training campaign (11 runs, v1–v11, on a rented vast.ai RTX 3090) are
 done; the best checkpoint (v9, ~30% episode success / ~0.04 m position error)
 did **not** clear the stated ≥90% promotion bar, so Phase 4 stays open until
 a later campaign does. See `soarm_mjlab/docs/vast_ai_training.md` (how to
-rent/run/retrieve) and `soarm_mjlab/docs/reach_training_debug_log_v1_v11.md`
-(the v1–v11 tuning case study) for the artifacts this phase produced.
+rent/run/retrieve) and `soarm_mjlab/docs/reach_training_debug_log.md`
+(the v1–v12 tuning case study) for the artifacts this phase produced.
 
 Written after reading `unitree_rl_mjlab` (a real mjlab application repo) end
 to end; see that repo's `src/tasks/velocity/` for the pattern this roadmap
@@ -299,7 +299,7 @@ done, did not clear the bar — stays open).
       (`num_envs=4096`, `max_iterations=1500`) on a rented vast.ai RTX 3090
       — 11 runs (v1–v11), tracked via W&B (project `mjlab`, entity
       `thanhndv212-thanh-nguyen`). Full tuning history recorded in
-      `docs/reach_training_debug_log_v1_v11.md` as a debugging case study
+      `docs/reach_training_debug_log.md` as a debugging case study
       so future campaigns start from here instead of re-discovering the
       same failure modes.
 - [x] `scripts/play.py` used to visually inspect rollouts in the MuJoCo
