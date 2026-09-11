@@ -44,8 +44,20 @@ soarm-ws/              ← this repo (root, tracks submodule commits)
 for *both* hardware revisions — `SO100/so100.urdf` and `SO101/so101_new_calib.urdf`.
 The physical arm in this workspace is an **SO-101**. `soarm_sdk`'s viser dashboard
 still points at the older `SO100/so100.urdf`; `soarm_tamp` and `soarm_mjlab` both
-correctly vendor/reference the SO101 revision. When adding real-arm code, default
-to the SO101 URDF/MJCF unless you're specifically touching that dashboard.
+correctly vendor/reference the SO101 revision, and `soarm_sdk` now ships a
+`configs/so101.yaml` (which `soarm_tamp` loads explicitly). When adding real-arm
+code, default to the SO101 URDF/MJCF and config unless you're specifically
+touching that dashboard.
+
+**Joint frames are the recurring bug in this workspace.** Three conventions are
+live — raw servo ticks, lerobot's normalized degrees, and the URDF's kinematic
+zero — and they have been silently conflated more than once. `soarm_sdk`'s
+declared joint limits were in mixed frames until 2026-09 (two joints offset by
+±π/2), which went unnoticed until the SDK began enforcing them and clamped 55%
+of a planned trajectory. When you touch anything expressed in radians, say which
+frame it is in. `soarm_sdk.calibration.frame` is the only thing that relates
+ticks to the URDF, and `ServoRobot` intersects declared limits with the arm's
+measured travel so the physical stops always win.
 
 ## Git workflow (submodules)
 
