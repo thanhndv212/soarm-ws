@@ -1,0 +1,57 @@
+# Changelog
+
+All notable changes to `soarm-ws` are documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [Unreleased]
+
+### Added
+
+- `LICENSE` (MIT) at the workspace root, and MIT `LICENSE` files in every
+  first-party submodule that lacked one: `imu_sdk`, `camera_calibration`,
+  `m5teleop`, `soarm_lerobot`, `soarm_tamp`.
+- `CHANGELOG.md` in each of those, reconstructed from their git history.
+- `soarm_tamp` — long-horizon TAMP planning (`long_tamp` on HPP) driving
+  the physical SO-101. Not yet a git submodule.
+
+### Changed
+
+- **Relicensed `imu_sdk` and `camera_calibration` from Apache-2.0 to
+  MIT**, so the whole workspace is MIT. Both had declared Apache-2.0 in
+  `pyproject.toml` while shipping no `LICENSE` file; their license
+  classifiers were updated to match.
+- `m5teleop`, `soarm_lerobot` and `soarm_tamp` now declare `license` and
+  `authors` in `pyproject.toml`; previously they declared neither.
+
+### Notes
+
+- `SO-ARM100` is deliberately untouched. It is TheRobotStudio's upstream
+  repo, vendored read-only for its URDF/MJCF models, and already carries
+  its own LICENSE and CHANGELOG.
+- `soarm_sdk` and `soarm_mjlab` already had MIT LICENSE and CHANGELOG
+  files and were left alone.
+
+## [0.1.0] — 2026-07-25
+
+Reconstructed from git history; the workspace root had no changelog before
+now. It is a thin umbrella: no root package, no shared `pyproject.toml`, no
+build orchestration. Its only job is to pin compatible submodule commits
+together and document how they compose.
+
+### Added
+
+- Workspace scaffolding: `AGENTS.md`, `.gitignore`, VS Code config.
+- Submodules, in the order they arrived: `soarm_sdk`, `imu_sdk`,
+  `m5teleop`, `camera_calibration`, `SO-ARM100`; then `soarm_learn`
+  (later `soarm_lerobot`); then `soarm_mjlab`.
+- `ARCHITECTURE.md` — how the packages compose, including the two
+  independent servo-control stacks (`soarm_sdk` and lerobot's
+  `SOFollower`) that talk to the same bus without being layered.
+- `MIGRATION_PLAN.md` and `SOARM_MJLAB_ROADMAP.md`.
+- Submodule git workflow and session-start protocol in `AGENTS.md`.
+
+### Changed
+
+- Renamed the `soarm_learn` submodule to `soarm_lerobot` throughout.
