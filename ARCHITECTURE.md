@@ -58,22 +58,24 @@ Notes on this graph:
   directly** (`from imu_sdk import ImuData, ImuReader, find_port` in
   `teleop.py`). Everything else is glued together at the process/CLI level,
   not the import level.
-- **`soarm_sdk` and the teleop pipeline are parallel, not layered.**
-  `m5teleop/m5teleop/lerobot_soarm_interface.py` (`ArmInterface`) talks to the
-  servo bus through **lerobot's `SO100Follower`**, not through `soarm_sdk`.
-  `soarm_sdk` is a separate, self-contained SDK used by its own examples
-  (`calibrate.py`, `viser_dashboard.py`) for low-level register access,
-  homing, and PID tuning — it is not currently wired into the teleop loop.
-  Treat them as two independent ways to talk to the same Feetech servo bus,
-  not as a dependency chain.
+- **`soarm_sdk` is now the transport under the teleop pipeline too.**
+  `m5teleop/m5teleop/lerobot_soarm_interface.py` (`ArmInterface`) used to wrap
+  lerobot's `SOFollower` directly; it now delegates to `soarm_sdk.LeRobotRobot`
+  (hardware) and `soarm_sdk.NullRobot` (`--dry-run`), both of which satisfy
+  `soarm_sdk.RobotInterface`. There are still **two ways to reach the servo
+  bus** — this SDK's own Feetech stack (`ServoRobot`) and lerobot's
+  `SOFollower` (`LeRobotRobot`, which owns its calibration in servo EEPROM) —
+  but they are now two backends behind one interface rather than two
+  unrelated stacks. Pick by transport, not by call-site API.
 - `soarm_lerobot`'s `TeleopRecorder` import in `teleop.py` is wrapped in a
   `try/except ImportError` — recording is an optional add-on, not a hard
   dependency of teleop.
-- `soarm_sdk`'s own README documents a `fullstack_manip/core/hardware_interface.py`
-  (`ServoHardwareInterface`, `RobotInterface`, `MotionExecutor`) — **this code
-  does not exist in this repo.** It's carried over from the SDK's upstream
-  project (`github.com/thanhndv212/fullstack-manip`, see its `pyproject.toml`
-  `Homepage`). Don't expect to find `fullstack_manip` here.
+- `soarm_sdk`'s README used to document a `fullstack_manip/core/hardware_interface.py`
+  (`ServoHardwareInterface`, `RobotInterface`, `MotionExecutor`) carried over from
+  the SDK's upstream project (`github.com/thanhndv212/fullstack-manip`) —
+  **that code has never existed in this repo.** The README now documents the real
+  thing instead (`soarm_sdk.robot`: `RobotInterface`, `ServoRobot`, `NullRobot`).
+  There is still no `MotionExecutor` anywhere in this workspace.
 
 ## Package details
 
@@ -82,28 +84,52 @@ Notes on this graph:
 `src/` layout, packaged with **hatchling**, imported as `from soarm_sdk import
 ...`. Requires Python ≥3.9 (looser than the rest of the workspace).
 
-- `port_handler.py`, `protocol_packet_handler.py`, `group_sync_read.py`,
-  `group_sync_write.py`, `stservo_def.py` — the Feetech STS/SCS serial
-  protocol implementation (packet framing, checksums, register map).
-  `sts.py` / `scscl.py` provide protocol-specific convenience wrappers on top.
-- `bus.py` — the hardware-access layer everything else is built on: port
-  discovery/scanning, servo diagnostics, raw register `write1`/`write2`.
-  Docstring in the file calls this out explicitly as "shared by all
-  higher-level tools."
-- `calibration.py` — batch operation planning (`OperationPlan`,
-  `build_operation_plan`, `apply_plan`) for ID reassignment, angle limits,
-  acceleration/speed, torque, mode, and baud rate changes across many servos
-  in one pass. Backs the `calibrate.py` CLI and the dashboard's Reconfigure
-  tab.
-- `conversions.py` — the only math boundary between encoder ticks (0–4095)
-  and SI units (radians, rad/s). Anything reading/writing joint state should
-  go through here rather than hard-coding `4096`/`2048`.
-- `examples/viser_dashboard.py` — a 7-tab browser control panel (Start Up,
-  Homing Wizard, PID Tuning, Command Panel, Recorder, Monitor, Reconfigure)
-  built on Viser, with live 3-D FK rendered via `yourdfpy`/`trimesh` against
-  `SO-ARM100/Simulation/SO100/so100.urdf`. Polls all joints per cycle with a
-  single `GroupSyncRead` bus transaction (falls back to per-servo reads on
-  failure).
+Organized in layers, each a subpackage (reorganized from a flat 20-module
+namespace — every pre-reorg import path still resolves through a deprecation
+shim, so external code did not have to change):
+
+- `protocol/` — the Feetech STS/SCS serial protocol implementation: packet
+  framing, checksums, the register map (`port_handler`, `packet_handler`,
+  `group_sync_read`/`group_sync_write`, `registers`). `sts` / `scscl` are the
+  per-series convenience wrappers on top. Nothing here knows about a specific
+  robot's joint layout.
+- `bus/` — the hardware-access layer everything else builds on. `discovery`
+  does port discovery/scanning, servo diagnostics, and raw register
+  `write1`/`write2`; `servo_config` does batch operation planning
+  (`OperationPlan`, `build_operation_plan`, `apply_plan`) for ID reassignment,
+  angle limits, acceleration/speed, torque, mode, and baud changes across many
+  servos in one pass. Backs the `soarm-calibrate` CLI and the dashboard's
+  Reconfigure tab.
+- `robot/` — **the abstraction boundary between algorithm code and hardware.**
+  `interfaces.RobotInterface` (a structural `Protocol`) and the `Robot` ABC,
+  plus backends: `ServoRobot` (real RS-485 hardware, via `hardware.
+  ServoHardwareInterface`) and `NullRobot` (in-memory, no hardware). Joint
+  limits and a per-step bound are enforced here on every write, so they hold
+  for every caller. Anything above this layer should speak `RobotInterface`,
+  not a specific backend.
+- `calibration/` — the tick ↔ URDF-joint-frame mapping: `frame`
+  (`RobotCalibration`, `seed_from_travel`), `seed` (offline seeding from a
+  lerobot calibration file), and `rom_sweep` (the range-of-motion measurement
+  that seeding consumes). Distinct from `bus/servo_config` — that configures
+  servo registers, this answers "what tick value means zero radians to the
+  URDF?"
+- `conversions.py` — the only math boundary between encoder ticks (0–4095) and
+  SI units (radians, rad/s). Anything reading/writing joint state should go
+  through here rather than hard-coding `4096`/`2048`.
+- `kinematics/` — URDF loading + forward kinematics (`yourdfpy`), with no
+  viewer dependency, so a planner or a headless test can use FK without Viser.
+- `trajectory.py` — waypoint resampling bounding the per-joint step between
+  consecutive commands, for streaming a planned or recorded path to a robot.
+- `dashboard/` — a 7-tab browser control panel (Start Up, Homing Wizard, PID
+  Tuning, Command Panel, Recorder, Monitor, Reconfigure) built on Viser, with
+  live 3-D FK against `SO-ARM100/Simulation/SO100/so100.urdf`. Polls all joints
+  per cycle with a single `GroupSyncRead` transaction (falls back to per-servo
+  reads on failure). Panels are GUI wiring only; the logic they drive lives in
+  the layers above.
+- `cli/` — console-script entry points, installed on `$PATH` by pip:
+  `soarm-calibrate` (+ `--ui` for the interactive TUI), `soarm-dashboard`,
+  `soarm-dashboard-setup`, `soarm-seed-calibration`. The `examples/*.py`
+  scripts are thin launchers over these, for running from a checkout.
 
 ### `imu_sdk` — IMU transport SDK + firmware
 
@@ -207,11 +233,17 @@ here). Supplies the robot description consumed by two other packages:
 
 ## Cross-cutting patterns worth knowing before you edit
 
-- **Two independent servo-control stacks.** `soarm_sdk` (raw Feetech
-  protocol) and lerobot's `SO100Follower` (used by `m5teleop`) both talk to
-  the same physical bus but are not integrated with each other in this repo.
-  If you're adding a feature that needs joint state in teleop, use the
-  `ArmInterface` in `lerobot_soarm_interface.py`, not `soarm_sdk` directly.
+- **Two servo transports, one interface.** `soarm_sdk`'s own Feetech stack
+  (`ServoRobot`) and lerobot's `SOFollower` (`LeRobotRobot`) both talk to the
+  same physical bus; both are `soarm_sdk` backends satisfying
+  `RobotInterface`, so application code should not care which is underneath.
+  **Frames are the catch, not the API:** lerobot reports *normalized* degrees
+  whose zero is the midpoint of calibrated travel, which is not the URDF's
+  kinematic zero. Teleop is fine with that (the operator closes the loop
+  visually); a motion planner is not — it needs `ServoRobot` plus a
+  `RobotCalibration` from `soarm_sdk.calibration.frame`.
+  If you're adding a feature that needs joint state in teleop, `ArmInterface`
+  in `lerobot_soarm_interface.py` is still the place — it now just delegates.
 - **Config centralization.** Each package that has runtime-tunable behavior
   keeps it in one `config.py` (`m5teleop/m5teleop/config.py`,
   `soarm_lerobot/soarm_lerobot/config.py`) rather than scattering constants.

@@ -31,6 +31,9 @@ soarm-ws/              ← this repo (root, tracks submodule commits)
 ```
 
 - All packages require Python **≥3.10** (soarm_sdk: ≥3.9; soarm_tamp: ≥3.11).
+- **`m5teleop` now depends on `soarm_sdk`** (for the arm transport). Install
+  the SDK first, or `pip install -e m5teleop/` will pull it from PyPI rather
+  than using this checkout.
 - `soarm_sdk` uses **hatchling** + `src/` layout. Imports are `from soarm_sdk import ...`.
 - `soarm_tamp` also uses **hatchling**, but flat layout (`soarm_tamp/soarm_tamp/`).
 - Everything else (`imu_sdk`, `m5teleop`, `camera_calibration`, `soarm_lerobot`,
@@ -124,16 +127,19 @@ cd soarm_sdk && hatch run test         # pytest tests
 cd camera_calibration && pytest tests/ -v
 cd soarm_mjlab && make test            # uv run pytest (make test-cpu forces FORCE_CPU=1)
 ```
-`soarm_sdk`, `camera_calibration` and `soarm_mjlab` have tests; `soarm_mjlab`
-also has CI (see Code style below). `imu_sdk`, `m5teleop`, `soarm_lerobot`,
-`soarm_tamp` have none.
+`soarm_sdk`, `camera_calibration`, `soarm_mjlab` and `m5teleop` have tests
+(`cd m5teleop && pytest tests/ -v` — its suite runs on the `--dry-run` path,
+so it needs no hardware, no lerobot and no pinocchio); `soarm_sdk` and
+`soarm_mjlab` both have CI (see Code style below). `imu_sdk`,
+`soarm_lerobot`, `soarm_tamp` have none.
 
 ### Run (hardware required unless noted)
 
 | What | Command |
 |------|---------|
-| Servo calibration UI | `python soarm_sdk/examples/calibrate.py --device /dev/ttyUSB0 --scan-range 1-6 --ui` |
-| Servo dashboard (browser) | `python soarm_sdk/examples/viser_dashboard.py --device /dev/cu.usbserial-XXXX` |
+| Servo calibration UI | `soarm-calibrate --device /dev/ttyUSB0 --scan-range 1-6 --ui` (console script; `python soarm_sdk/examples/calibrate.py ...` also works from a checkout) |
+| Servo dashboard (browser) | `soarm-dashboard --device /dev/cu.usbserial-XXXX` (setup-only tabs: `soarm-dashboard-setup`) |
+| Seed a URDF-frame calibration (no hardware) | `soarm-seed-calibration --lerobot <lerobot.json>` (or `python -m soarm_sdk.seed_calibration ...`) |
 | Camera calibration CLI | `camera-calibration capture --images 20` (installed console script) |
 | Teleop (dry-run, no hardware) | `cd m5teleop && python teleop.py --dry-run` |
 | Teleop (full) | `cd m5teleop && python teleop.py --servo-port /dev/cu.usbserial-XXXX` |
@@ -166,16 +172,26 @@ Flash before using IMU:
 
 ## Architecture notes
 
-- **Teleop pipeline**: `teleop.py` runs a 50 Hz real-time loop: IMU data → Error-State Kalman Filter (`imu_ekf.py`) → cascade P-P quaternion orientation controller (`orient_controller.py`) → differential IK via pink+pinocchio (`ik_solver.py`) → servo commands via lerobot SOFollower (`lerobot_soarm_interface.py`).
+- **Teleop pipeline**: `teleop.py` runs a 50 Hz real-time loop: IMU data → Error-State Kalman Filter (`imu_ekf.py`) → cascade P-P quaternion orientation controller (`orient_controller.py`) → differential IK via pink+pinocchio (`ik_solver.py`) → servo commands via `ArmInterface` (`lerobot_soarm_interface.py`), which since 2026-09 delegates to `soarm_sdk.LeRobotRobot` (hardware, lerobot `SOFollower` underneath) or `soarm_sdk.NullRobot` (`--dry-run`). Both satisfy `soarm_sdk.RobotInterface`, so teleop's arm is the same kind of object TAMP and RL drive.
 - **Dataset recording**: `--record` flag on `teleop.py` integrates `soarm_lerobot.TeleopRecorder`, which buffers frames and saves episodes as a LeRobotDataset. Episodes are delimited by BTN_A press (teleop on/off). Training data flows through `soarm_lerobot/dataset.py` (chunking, normalisation) into ACT or Diffusion Policy training.
 - **Simulation** runs in parallel with hardware: Viser 3-D browser viewer (`sim_interface.py`) and Rerun data logger (`viz.py`).
 - `SO-ARM100/Simulation/` has URDF files and MuJoCo MJCF (`scene.xml`) for physics sim.
 - Buttons on M5StickC: BTN_A toggles teleop, BTN_B toggles gripper.
 - Serial baud: 115200 for IMU, 1000000 for servo bus.
+- **`soarm_sdk` is organized in layers, one subpackage each:** `protocol/`
+  (Feetech wire protocol) → `bus/` (discovery, diagnostics, servo EEPROM
+  config) → `robot/` (the `RobotInterface`/`Robot` abstraction + `ServoRobot`
+  / `NullRobot` backends), alongside `calibration/` (tick ↔ URDF frame),
+  `kinematics/`, `trajectory.py`, `dashboard/` and `cli/`. It was a flat
+  20-module namespace until the 2026-09 reorg; **every pre-reorg import path
+  still works via deprecation shims**, so nothing downstream had to change.
+  The one exception: `soarm_sdk.calibration` used to mean servo EEPROM
+  configuration and now means the URDF-frame mapping — that code moved to
+  `soarm_sdk.bus.servo_config`. See `soarm_sdk/CHANGELOG.md`.
 - **`soarm_sdk`'s calibration/safety layer is what `soarm_tamp` and
-  `soarm_mjlab` both build on.** `frame_calibration.py` maps raw servo ticks
+  `soarm_mjlab` both build on.** `calibration/frame.py` maps raw servo ticks
   to the URDF's joint frame (`RobotCalibration`, seeded offline via
-  `seed_from_travel()`/`seed_calibration.py`, marked `validated: false` until
+  `seed_from_travel()`/`calibration/seed.py`, marked `validated: false` until
   a physical direction-sign check passes). `ServoRobot`/`RobotInterface` now
   enforce declared joint limits and a per-step clamp (`max_step_rad`) on
   every write, not just protocol-range clamping. This is the shared "same
@@ -186,7 +202,7 @@ Flash before using IMU:
   runs on the host against `soarm_sdk`. The two never share an interpreter — the
   contract between them is a waypoint manifest on disk: `plan (container) → runs/<name>/manifest.json
   → execute (host)`. Joint-angle zero differs between the planning URDF, `soarm_sdk`,
-  and lerobot; the mapping lives in `soarm_sdk.frame_calibration`, is seeded offline
+  and lerobot; the mapping lives in `soarm_sdk.calibration.frame`, is seeded offline
   from measured travel, and `execute.py` **refuses to stream** until
   `validate_calibration.py` confirms the direction signs on the real arm. Uses the
   SO101 URDF revision (see the naming note above). Full task-specific detail (cube
@@ -201,12 +217,18 @@ Flash before using IMU:
 
 ## Code style
 
-- Ruff for linting (soarm_sdk has config; run `ruff check` in other packages too)
+- Ruff for linting (soarm_sdk pins `[tool.ruff.lint] select = ["E4","E7","E9","F"]`
+  in its `pyproject.toml` — ruff's own defaults have drifted much wider than that
+  over versions, so an unpinned `ruff check` reports hundreds of style findings
+  this workspace never opted into; run `ruff check` in other packages too, but
+  read the output with that in mind).
 - No pre-commit hooks at the workspace level.
-- `soarm_mjlab` is the one package with CI (`.github/workflows/ci.yml`): a
-  `fast` job (lint + full CPU test pyramid) blocks merges on every push/PR; a
-  non-blocking `train-smoke` job runs a longer PPO slice post-merge/on release
-  and uploads the checkpoint as a build artifact. No other package has CI.
+- Two packages have CI. `soarm_mjlab` (`.github/workflows/ci.yml`): a `fast` job
+  (lint + full CPU test pyramid) blocks merges on every push/PR; a non-blocking
+  `train-smoke` job runs a longer PPO slice post-merge/on release and uploads the
+  checkpoint as a build artifact. `soarm_sdk` (`.github/workflows/ci.yml`):
+  `ruff check src tests` + `pytest`, matrixed over Python 3.9–3.12, on push to
+  main/master and on every PR.
 - Single author repo — no branch conventions documented
 
 ## Related docs
