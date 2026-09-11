@@ -14,7 +14,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `m5teleop`, `soarm_lerobot`, `soarm_tamp`.
 - `CHANGELOG.md` in each of those, reconstructed from their git history.
 - `soarm_tamp` — long-horizon TAMP planning (`long_tamp` on HPP) driving
-  the physical SO-101. Not yet a git submodule.
+  the physical SO-101, added as a submodule
+  (github.com/thanhndv212/soarm_tamp). Seventh package in the workspace,
+  and the first that plans motion rather than recording or executing it.
 
 ### Changed
 
