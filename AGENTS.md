@@ -10,9 +10,13 @@ This surfaces relevant facts, learnings, and open tasks from 365 past sessions. 
 
 ## Workspace overview
 
-Five independent Python packages for the SO-ARM100 robot arm. **No root build tool** —
-each package is installed and tested independently. Each package has its own GitHub
-remote; this repo uses **git submodules** to track them together.
+Seven independent Python packages for the SO-ARM100/SO-101 robot arm, plus the
+vendored hardware repo. **No root build tool** — each package is installed and
+tested independently. Each package has its own GitHub remote; this repo uses
+**git submodules** to track them together. The whole workspace is MIT-licensed;
+every submodule (except the vendored `SO-ARM100`, which carries its own) has its
+own `LICENSE` and `CHANGELOG.md` — check a package's `CHANGELOG.md` before
+`git log`-spelunking it for recent changes.
 
 ```
 soarm-ws/              ← this repo (root, tracks submodule commits)
@@ -21,12 +25,24 @@ soarm-ws/              ← this repo (root, tracks submodule commits)
 ├── m5teleop/          ← git submodule → github.com/thanhndv212/m5teleop
 ├── camera_calibration/← git submodule → github.com/thanhndv212/camera_calibration
 ├── soarm_lerobot/     ← git submodule → github.com/thanhndv212/soarm_lerobot
-└── SO-ARM100/         ← git submodule → github.com/TheRobotStudio/SO-ARM100
+├── soarm_mjlab/       ← git submodule → github.com/thanhndv212/soarm_mjlab
+├── soarm_tamp/        ← git submodule → github.com/thanhndv212/soarm_tamp
+└── SO-ARM100/         ← git submodule → github.com/TheRobotStudio/SO-ARM100 (read-only)
 ```
 
-- All packages require Python **≥3.10** (soarm_sdk: ≥3.9).
+- All packages require Python **≥3.10** (soarm_sdk: ≥3.9; soarm_tamp: ≥3.11).
 - `soarm_sdk` uses **hatchling** + `src/` layout. Imports are `from soarm_sdk import ...`.
-- All others use **setuptools** + flat layout.
+- `soarm_tamp` also uses **hatchling**, but flat layout (`soarm_tamp/soarm_tamp/`).
+- Everything else (`imu_sdk`, `m5teleop`, `camera_calibration`, `soarm_lerobot`,
+  `soarm_mjlab`) uses **setuptools** + flat layout.
+- `soarm_mjlab` is the one package installed with **uv**, not pip — see Install below.
+
+**SO-100 vs SO-101 naming trap:** the vendored `SO-ARM100/Simulation/` ships URDF
+for *both* hardware revisions — `SO100/so100.urdf` and `SO101/so101_new_calib.urdf`.
+The physical arm in this workspace is an **SO-101**. `soarm_sdk`'s viser dashboard
+still points at the older `SO100/so100.urdf`; `soarm_tamp` and `soarm_mjlab` both
+correctly vendor/reference the SO101 revision. When adding real-arm code, default
+to the SO101 URDF/MJCF unless you're specifically touching that dashboard.
 
 ## Git workflow (submodules)
 
@@ -75,22 +91,42 @@ pip install -e imu_sdk/
 pip install -e camera_calibration/
 pip install -e m5teleop/
 pip install -e soarm_lerobot/
+pip install -e soarm_tamp/[host]    # host side (execute.py) — pulls in soarm_sdk
 ```
 
 There is **no root pyproject.toml or requirements.txt**. Install each package explicitly.
+
+`soarm_tamp`'s planning half (`plan.py`, `replay.py`) needs `long_tamp` + `pyhpp`,
+which only exist inside its HPP Docker container (`soarm_tamp/scripts/hpp_container.sh`)
+— don't try to `pip install` those on the host. See "soarm_tamp" under Architecture
+notes below.
+
+```bash
+cd soarm_mjlab && make sync-cpu   # dev machine, no GPU (or: uv sync --extra cpu --group dev)
+cd soarm_mjlab && make sync       # GPU training box, CUDA 12.8 (or: uv sync --extra cu128 --group dev)
+```
+
+`soarm_mjlab` uses **uv**, not pip — `mjlab` gates `torch` behind mutually-exclusive
+CPU/CUDA extras that pip can't route cleanly. `uv.lock` is committed and CI runs
+`uv sync --locked`, so a stale lockfile fails the build.
 
 ## Key commands
 
 ### Lint
 ```bash
-cd soarm_sdk && ruff check src       # (hatch env lint)
+cd soarm_sdk && hatch run lint:check   # ruff check src tests
+cd soarm_mjlab && make lint            # uv run ruff check soarm_mjlab tests
 ```
 
 ### Test
 ```bash
+cd soarm_sdk && hatch run test         # pytest tests
 cd camera_calibration && pytest tests/ -v
+cd soarm_mjlab && make test            # uv run pytest (make test-cpu forces FORCE_CPU=1)
 ```
-Only `camera_calibration` has tests. Other packages have none.
+`soarm_sdk`, `camera_calibration` and `soarm_mjlab` have tests; `soarm_mjlab`
+also has CI (see Code style below). `imu_sdk`, `m5teleop`, `soarm_lerobot`,
+`soarm_tamp` have none.
 
 ### Run (hardware required unless noted)
 
@@ -104,6 +140,12 @@ Only `camera_calibration` has tests. Other packages have none.
 | Teleop + record dataset | `cd m5teleop && python teleop.py --servo-port /dev/cu.usbserial-XXXX --record` |
 | EKF tuning (stationary rec) | `cd m5teleop && python tune_ekf.py stationary --duration 90 --save rec.npz` |
 | EKF tuning (offline sweep) | `cd m5teleop && python tune_ekf.py sweep --load rec.npz` |
+| TAMP: plan (container) | `cd soarm_tamp && ./scripts/hpp_container.sh plan --out runs/cube01 --viewer none` |
+| TAMP: replay in 3-D viewer (no hardware) | `cd soarm_tamp && ./scripts/hpp_container.sh replay --run runs/cube01` (viser on :8000) |
+| TAMP: dry-run what would stream (no hardware) | `cd soarm_tamp && python -m soarm_tamp.execute runs/cube01 --dry-run` |
+| TAMP: execute on hardware | `cd soarm_tamp && python -m soarm_tamp.execute runs/cube01 --port /dev/cu.usbmodemXXXX` |
+| RL: train Reach policy (sim only) | `cd soarm_mjlab && uv run python scripts/train.py SoArm100-Reach` |
+| RL: play a trained checkpoint (sim only) | `cd soarm_mjlab && uv run python scripts/play.py ...` (see `soarm_mjlab/README.md`) |
 
 ### Firmware (Arduino IDE required)
 Flash before using IMU:
@@ -115,6 +157,12 @@ Flash before using IMU:
 - **pinocchio** — install via conda, not pip: `conda install -c conda-forge pinocchio` (m5teleop hard-depends on it)
 - **quadprog** — C extension, may need `brew install gfortran` on macOS
 - The author's env is called `gosim` (conda).
+- **`long_tamp` / `pyhpp`** (soarm_tamp planning half) — only importable inside the
+  HPP Docker container spun up by `soarm_tamp/scripts/hpp_container.sh`; not pip-installable
+  on the host. See the sibling `long-tamp` repo in `agimus-ws` for what's inside that container.
+- **`uv`** (soarm_mjlab) — required, not optional; plain `pip install -e .` won't route the
+  CPU/CUDA `torch` extras correctly. Install via `curl -LsSf https://astral.sh/uv/install.sh | sh`
+  or see [astral.sh/uv](https://docs.astral.sh/uv/).
 
 ## Architecture notes
 
@@ -124,15 +172,50 @@ Flash before using IMU:
 - `SO-ARM100/Simulation/` has URDF files and MuJoCo MJCF (`scene.xml`) for physics sim.
 - Buttons on M5StickC: BTN_A toggles teleop, BTN_B toggles gripper.
 - Serial baud: 115200 for IMU, 1000000 for servo bus.
+- **`soarm_sdk`'s calibration/safety layer is what `soarm_tamp` and
+  `soarm_mjlab` both build on.** `frame_calibration.py` maps raw servo ticks
+  to the URDF's joint frame (`RobotCalibration`, seeded offline via
+  `seed_from_travel()`/`seed_calibration.py`, marked `validated: false` until
+  a physical direction-sign check passes). `ServoRobot`/`RobotInterface` now
+  enforce declared joint limits and a per-step clamp (`max_step_rad`) on
+  every write, not just protocol-range clamping. This is the shared "same
+  interface for sim and hardware" contract both newer packages depend on.
+- **`soarm_tamp` — long-horizon TAMP, planning and execution in separate processes.**
+  `plan.py`/`replay.py` run inside the HPP container (`long_tamp` + `pyhpp`, ported
+  from the `long-tamp`/`agimus_spacelab` planning stack — see `agimus-ws`); `execute.py`
+  runs on the host against `soarm_sdk`. The two never share an interpreter — the
+  contract between them is a waypoint manifest on disk: `plan (container) → runs/<name>/manifest.json
+  → execute (host)`. Joint-angle zero differs between the planning URDF, `soarm_sdk`,
+  and lerobot; the mapping lives in `soarm_sdk.frame_calibration`, is seeded offline
+  from measured travel, and `execute.py` **refuses to stream** until
+  `validate_calibration.py` confirms the direction signs on the real arm. Uses the
+  SO101 URDF revision (see the naming note above). Full task-specific detail (cube
+  geometry, 5-DOF grasp mask, growing the scene) is in `soarm_tamp/README.md`.
+- **`soarm_mjlab` — RL training deployed through the same interface hardware uses.**
+  Trains policies for SO-ARM100 in MuJoCo via `mjlab`, deployed through
+  `soarm_sdk.RobotInterface` — the same interface real-hardware teleop code uses, so
+  a trained policy doesn't distinguish sim from the physical arm. Vendors the SO101
+  MJCF/meshes directly into the package (no cross-submodule file references at
+  runtime) and mirrors `soarm_sdk`'s joint names/home-pose config 1:1. Progress and
+  training campaign results are tracked in `SOARM_MJLAB_ROADMAP.md`.
 
 ## Code style
 
 - Ruff for linting (soarm_sdk has config; run `ruff check` in other packages too)
-- No pre-commit hooks, no CI
+- No pre-commit hooks at the workspace level.
+- `soarm_mjlab` is the one package with CI (`.github/workflows/ci.yml`): a
+  `fast` job (lint + full CPU test pyramid) blocks merges on every push/PR; a
+  non-blocking `train-smoke` job runs a longer PPO slice post-merge/on release
+  and uploads the checkpoint as a build artifact. No other package has CI.
 - Single author repo — no branch conventions documented
 
 ## Related docs
 
+- `ARCHITECTURE.md` — how the packages fit together, dependency graph, per-package details
+- `CHANGELOG.md` — workspace-level changelog (each submodule also has its own)
+- `MIGRATION_PLAN.md`, `SOARM_MJLAB_ROADMAP.md` — standing plans for ongoing migration/RL-training work
 - `m5teleop/IMPLEMENTATION.md` — full architecture, tuning guide, phase-by-phase build log (476 lines)
 - `soarm_sdk/docs/usage.md` — servo SDK usage guide
-- Each package has its own README
+- `soarm_tamp/README.md` — TAMP task setup, joint-calibration caveats, plan/execute workflow
+- `soarm_mjlab/README.md` + `soarm_mjlab/docs/` — RL training setup, vast.ai GPU training guide, tuning debug log
+- Each package has its own README (and now its own LICENSE + CHANGELOG.md)
