@@ -27,9 +27,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `m5teleop`, `soarm_lerobot` and `soarm_tamp` now declare `license` and
   `authors` in `pyproject.toml`; previously they declared neither.
 
+### Changed (vendored upstream)
+
+- Bumped `SO-ARM100` from `fda892c` to `eecbe3e`, 8 commits of upstream
+  work. Purely additive for us: it brings a wrist-camera variant
+  (`so101_new_calib_camera.urdf`/`.xml` plus two meshes), BambuLab A1 mini
+  STLs, a LeRobot WebUI 3-point calibration guide, and supplier/doc edits.
+  `so101_new_calib.urdf` and the jaw meshes `soarm_tamp` measures its
+  gripper geometry from are unchanged, so its constants still hold.
+
 ### Notes
 
-- `SO-ARM100` is deliberately untouched. It is TheRobotStudio's upstream
+- `SO-ARM100` is otherwise untouched. It is TheRobotStudio's upstream
   repo, vendored read-only for its URDF/MJCF models, and already carries
   its own LICENSE and CHANGELOG.
 - `soarm_sdk` and `soarm_mjlab` already had MIT LICENSE and CHANGELOG
