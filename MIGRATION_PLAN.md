@@ -215,7 +215,7 @@ below.
 
 **Also landed in this pass:** removed `streamlit>=1.38` from `soarm_sdk`'s
 base `dependencies` — confirmed via `grep` that zero files in the package
-import it (the `examples/calibrate.py --ui` TUI is plain `print()`-based, no
+import it (the `examples/calibrate.py bus --ui` TUI is plain `print()`-based, no
 TUI library at all; streamlit was dead weight left over from an earlier,
 different dashboard). Added `numpy>=1.24` and `pyyaml>=6.0` as new base
 dependencies — both genuinely needed now (`JointState`/`Pose` arrays,
