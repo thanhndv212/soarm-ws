@@ -151,6 +151,7 @@ so it needs no hardware, no lerobot and no pinocchio); `soarm_sdk` and
 |------|---------|
 | Servo calibration UI | `soarm-calibrate --device /dev/ttyUSB0 --scan-range 1-6 --ui` (console script; `python soarm_sdk/examples/calibrate.py ...` also works from a checkout) |
 | Servo dashboard (browser) | `soarm-dashboard --device /dev/cu.usbserial-XXXX` (setup-only tabs: `soarm-dashboard-setup`) |
+| Measure + save a URDF-frame calibration (hardware) | `soarm-calibrate-rom --arm-id <name>` (ROM sweep -> `seed_from_travel` -> `~/.soarm_sdk/calibration.json`; `--dry-run` simulates it; `python soarm_sdk/examples/calibrate_arm.py ...` works from a checkout) |
 | Seed a URDF-frame calibration (no hardware) | `soarm-seed-calibration --lerobot <lerobot.json>` |
 | Camera calibration CLI | `camera-calibration capture --images 20` (installed console script) |
 | Teleop (dry-run, no hardware) | `cd m5teleop && python teleop.py --dry-run` |
