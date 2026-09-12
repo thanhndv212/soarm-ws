@@ -2,6 +2,15 @@
 	"folders": [
 		{
 			"path": "."
+		},
+		{
+			"path": "../webpage-ws/soarm-ws-webpage"
+		},
+		{
+			"path": "../robot-irl/walka_rl_mjlab"
+		},
+		{
+			"path": "../webpage-ws/walka-rl-webpage"
 		}
 	],
 	"settings": {}
