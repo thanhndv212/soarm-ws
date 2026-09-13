@@ -1,7 +1,10 @@
 # Servo Telemetry Plan
 
-**Status (2026-09-13): phases 0-3 implemented** on `soarm_sdk` branch
-`servo-telemetry-block` (309 tests passing, ruff clean). Phases 4-5 outstanding.
+**Status (2026-09-13): all five phases implemented** on `soarm_sdk` branch
+`servo-telemetry-block` (329 tests passing, ruff clean). Phases 0-4 are verified
+on the arm; phase 5's rigs are unit-tested against a fake arm with planted
+backlash and droop, but have not yet been run on hardware — that needs
+commanded motion with clearance.
 
 Two deliberate deviations from this plan as first written, both in phase 2:
 `ServoSample` has no `read_ok` field (it would have been `True` in every
@@ -190,7 +193,7 @@ and that a raising consumer cannot affect the producer.
 **Never call `rr.connect_grpc(flush_timeout_sec=0.5)` from the bus thread** — see
 `m5teleop/viz.py:48`; a 0.5 s flush on a 10 ms tick is fatal.
 
-### Phase 4 — dashboard consumes instead of polls
+### Phase 4 — dashboard consumes instead of polls — DONE (`--stream`)
 Point `DashboardContext` at a `ServoHardwareInterface` it owns: delete the
 open/close-per-iteration, delete `_HEALTH_EVERY` and the 12 per-servo reads (temp and
 current now arrive in the block), keep `add_sample_hook` as a shim. Migrate `pid.py`'s
@@ -198,7 +201,13 @@ step test — `_compute_step_metrics` at `panels/pid.py:25` already computes ris
 and overshoot from an ad-hoc reader; it should read the shared stream.
 This phase is where the user-visible stutter disappears.
 
-### Phase 5 — the diagnostics that motivated this
+Not anticipated when this was written: the poll loop reopens the port every
+iteration *so that panels can grab it in between* — 19 `ctx.bus()` call sites
+across 5 panels depend on that. Holding the port open therefore required
+`ServoHardwareInterface.lend_bus()` (pause the bus thread, lend the handle,
+resume) with `ctx.bus()` delegating to it, which leaves all 19 sites unchanged.
+
+### Phase 5 — the diagnostics that motivated this — IMPLEMENTED, NOT YET RUN
 - **Backlash**: hysteresis loop — drive to the same commanded position from both
   directions at near-zero load, compare measured. `soarm_tamp/soarm_tamp/joint_test.py
   --single` is already the right rig; point it at the stream.
