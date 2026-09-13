@@ -122,7 +122,8 @@ shim, so external code did not have to change):
   consecutive commands, for streaming a planned or recorded path to a robot.
 - `dashboard/` — a 7-tab browser control panel (Start Up, Homing Wizard, PID
   Tuning, Command Panel, Recorder, Monitor, Reconfigure) built on Viser, with
-  live 3-D FK against `SO-ARM100/Simulation/SO100/so100.urdf`. Polls all joints
+  live 3-D FK against `SO-ARM100/Simulation/SO101/so101_new_calib.urdf`, mapped
+  through the arm's saved calibration. Polls all joints
   per cycle with a single `GroupSyncRead` transaction (falls back to per-servo
   reads on failure). Panels are GUI wiring only; the logic they drive lives in
   the layers above.
@@ -225,7 +226,7 @@ workspace — used independently for camera intrinsics and ArUco marker work
 
 Vendored from `TheRobotStudio/SO-ARM100`, **read-only** (don't push changes
 here). Supplies the robot description consumed by two other packages:
-- `Simulation/SO100/so100.urdf` — used by `soarm_sdk`'s viser dashboard (FK
+- `Simulation/SO101/so101_new_calib.urdf` — used by `soarm_sdk`'s viser dashboard (FK
   via `yourdfpy`/`trimesh`) and by `m5teleop`'s IK solver (`pink`/`pinocchio`).
 - `Simulation/scene.xml` — MuJoCo MJCF for physics simulation.
 - Also contains CAD (STEP/STL), 3D-print notes, and the BOM/assembly docs for
