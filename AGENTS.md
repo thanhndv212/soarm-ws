@@ -43,7 +43,7 @@ soarm-ws/              ← this repo (root, tracks submodule commits)
 **SO-100 vs SO-101 naming trap:** the vendored `SO-ARM100/Simulation/` ships URDF
 for *both* hardware revisions — `SO100/so100.urdf` and `SO101/so101_new_calib.urdf`.
 The physical arm in this workspace is an **SO-101**. `soarm_sdk`'s viser dashboard
-still points at the older `SO100/so100.urdf`; `soarm_tamp` and `soarm_mjlab` both
+now points at `SO101/so101_new_calib.urdf` too; `soarm_tamp` and `soarm_mjlab` both
 correctly vendor/reference the SO101 revision, and `soarm_sdk` now ships a
 `configs/so101.yaml` (which `soarm_tamp` loads explicitly). When adding real-arm
 code, default to the SO101 URDF/MJCF and config unless you're specifically
