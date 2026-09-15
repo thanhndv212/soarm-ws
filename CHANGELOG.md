@@ -20,6 +20,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the physical SO-101, added as a submodule
   (github.com/thanhndv212/soarm_tamp). Seventh package in the workspace,
   and the first that plans motion rather than recording or executing it.
+- Nine per-package agent skills (`soarm-start` router, `soarm-workspace`,
+  one per submodule, `soarm-tamp`), migrated from the `agent-skills` branch
+  and updated to match current `main` — the reference-pose calibration
+  workflow behind `calibrate`, the SO101-by-default dashboards, and
+  `soarm_tamp`'s new plan-and-run dashboard — since the branch predated all
+  three. Mirrored file-for-file into `skills/`, `.claude/skills/` and
+  `.github/skills/`, matching `calibrate`'s existing convention.
 
 ### Changed
 

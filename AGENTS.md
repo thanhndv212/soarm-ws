@@ -8,6 +8,18 @@ python3 ~/.config/opencode/skills/brain/scripts/brain.py context /Users/thanhndv
 ```
 This surfaces relevant facts, learnings, and open tasks from 365 past sessions. Use this knowledge to avoid repeating past mistakes and to build on established patterns.
 
+## Skills
+
+Per-repo agent skills live in `skills/`, mirrored file-for-file into `.claude/skills/`
+and `.github/skills/` (no symlink — edit `skills/` and copy the change into both
+mirrors in the same commit). **Invoke `soarm-start` first** — it routes to the skill
+that owns the package you need, so you don't re-derive the layout below. One skill per
+submodule: `soarm-sdk`, `soarm-imu-sdk`, `soarm-m5teleop`, `soarm-camera-calibration`,
+`soarm-lerobot`, `soarm-mjlab`, `soarm-tamp`, plus `soarm-workspace` for cross-package
+work (submodule bumps, install order, CI, releases) and `calibrate` for SO-101
+tick-to-URDF-frame calibration specifically. See `skills/README.md` for conventions
+when adding or updating one.
+
 ## Workspace overview
 
 Seven independent Python packages for the SO-ARM100/SO-101 robot arm, plus the
