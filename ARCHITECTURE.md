@@ -98,7 +98,7 @@ shim, so external code did not have to change):
   `write1`/`write2`; `servo_config` does batch operation planning
   (`OperationPlan`, `build_operation_plan`, `apply_plan`) for ID reassignment,
   angle limits, acceleration/speed, torque, mode, and baud changes across many
-  servos in one pass. Backs the `soarm-calibrate` CLI and the dashboard's
+  servos in one pass. Backs the `soarm-reconfigure` CLI and the dashboard's
   Reconfigure tab.
 - `robot/` — **the abstraction boundary between algorithm code and hardware.**
   `interfaces.RobotInterface` (a structural `Protocol`) and the `Robot` ABC,
@@ -128,9 +128,9 @@ shim, so external code did not have to change):
   reads on failure). Panels are GUI wiring only; the logic they drive lives in
   the layers above.
 - `cli/` — console-script entry points, installed on `$PATH` by pip:
-  `soarm-calibrate` (+ `--ui` for the interactive TUI), `soarm-dashboard`,
-  `soarm-dashboard-setup`, `soarm-seed-calibration`. The `examples/*.py`
-  scripts are thin launchers over these, for running from a checkout.
+  `soarm-reconfigure` (+ `--ui` for the interactive TUI), `soarm-dashboard-setup`,
+  `soarm-dashboard-calibration`. The `examples/*.py` scripts are thin
+  launchers over these, for running from a checkout.
 
 ### `imu_sdk` — IMU transport SDK + firmware
 

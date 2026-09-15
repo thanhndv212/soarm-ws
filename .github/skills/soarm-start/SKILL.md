@@ -64,7 +64,7 @@ with the package that owns the *entry point* — here `soarm-m5teleop`, since
 1. **The physical arm is an SO-101, not an SO-100.** `SO-ARM100/Simulation/` ships
    both revisions. Default to `SO101/so101_new_calib.urdf` and `soarm_sdk`'s
    `configs/so101.yaml` for anything touching real hardware. `soarm_sdk`'s viser
-   dashboards (`soarm-dashboard`, `soarm_tamp`'s plan-and-run dashboard) now default
+   dashboards (`soarm-dashboard-setup`, `soarm_tamp`'s plan-and-run dashboard) now default
    to the SO101 URDF too, mapped through the arm's saved calibration — there is no
    live SO100 reference left in this workspace's runtime paths.
 2. **Always say which joint frame a radian value is in.** Three conventions are

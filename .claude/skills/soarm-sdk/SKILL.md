@@ -21,7 +21,7 @@ protocol/   Feetech STS/SCS wire protocol: packet framing, checksums, register m
 bus/        Hardware access. discovery: port scan, servo diagnostics, raw write1/write2.
             servo_config: batch operation planning (OperationPlan, build_operation_plan,
             apply_plan) for ID reassignment, angle limits, accel/speed, torque, mode, baud.
-            Backs soarm-calibrate and the dashboard's Reconfigure tab.
+            Backs soarm-reconfigure and the dashboard's Reconfigure tab.
 robot/      THE ABSTRACTION BOUNDARY. interfaces.RobotInterface (structural Protocol)
             + the Robot ABC, with backends ServoRobot (real RS-485, via
             hardware.ServoHardwareInterface), NullRobot (in-memory), LeRobotRobot
@@ -29,8 +29,9 @@ robot/      THE ABSTRACTION BOUNDARY. interfaces.RobotInterface (structural Prot
             are enforced HERE, on every write, so they hold for every caller.
 calibration/ tick ↔ URDF joint frame. frame (RobotCalibration, rezero_from_pose,
             seed_from_travel), pipeline (CalibrationPipeline, AcceptanceTolerances),
-            limits (measured_is_trusted, effective_limits), seed (offline seeding from
-            a lerobot calibration file), sweep_cli (ROM sweep).
+            limits (measured_is_trusted, effective_limits), sweep_cli (ROM sweep,
+            the only remaining seeding path — offline seeding from a lerobot
+            calibration file was removed).
 conversions.py  The ONLY math boundary between ticks (0–4095) and SI (rad, rad/s).
 kinematics/ URDF load + FK via yourdfpy, no viewer dependency (headless-safe).
 trajectory.py   Waypoint resampling bounding per-joint step between commands.
@@ -46,17 +47,15 @@ drive the same object teleop does.
 
 | Command | Does | Hardware? |
 |---|---|---|
-| `soarm-calibrate --device /dev/ttyUSB0 --scan-range 1-6 --ui` | Servo setup/EEPROM TUI | yes |
-| `soarm-dashboard --device /dev/cu.usbserial-XXXX` | Full operator dashboard: Start Up, Homing Wizard, Reconfigure, Command Panel, PID Tuning, Monitor, Recorder (7 tabs) | yes |
-| `soarm-dashboard-setup` | Just the bring-a-fresh-arm-online tabs (Start Up, Homing Wizard, Reconfigure) | yes |
+| `soarm-reconfigure --device /dev/ttyUSB0 --scan-range 1-6 --ui` | Servo setup/EEPROM TUI | yes |
+| `soarm-dashboard-setup --device /dev/cu.usbserial-XXXX` | Every tab: Start Up, Homing Wizard, Reconfigure, Command Panel, PID Tuning, Monitor, Recorder (7 tabs) | yes |
 | `soarm-dashboard-calibration --device /dev/cu.usbmodemXXXX --stream` | The guided URDF-frame calibration and acceptance workflow. **Primary calibration entry point — see `calibrate`.** | yes |
 | `soarm-calibrate-rom --arm-id <name>` | Standalone ROM sweep (`--dry-run` simulates); feeds the same ROM acceptance row the dashboard's Travel tab does | yes |
-| `soarm-seed-calibration --lerobot <lerobot.json>` | Offline, travel-only seed of a calibration (no direction signs, no reference-pose zero) | **no** |
 | `soarm-widen-limit` | Widen a declared joint limit that's clamping a trustworthy measured range | no |
 
-`examples/*.py` (`calibrate.py`, `viser_dashboard.py`, `setup_dashboard.py`) are thin
-launchers over these, for running from a checkout:
-`python soarm_sdk/examples/calibrate.py bus ...` / `... rom ...`.
+`examples/*.py` (`reconfigure.py`, `calibrate_rom.py`, `setup_dashboard.py`,
+`calibration_dashboard.py`) are thin launchers over these, for running from a
+checkout: `python soarm_sdk/examples/reconfigure.py ...`.
 
 ## The calibration story — read before touching any angle
 
@@ -70,8 +69,9 @@ configuration. That is the one rename **not** covered by a compatibility shim.)
 reference pose (e.g. `folded_flat` covers `shoulder_lift`/`elbow_flex`); this is what
 `soarm-dashboard-calibration`'s guided workflow drives, and it is the one covered in
 full by the **`calibrate`** skill — read that skill for the procedure, not this one.
-`seed_from_travel()` (offline, from `soarm-seed-calibration --lerobot`/ROM endpoints
-only) still exists but cannot recover direction signs or a true zero on an asymmetric
+`seed_from_travel()` (from `soarm-calibrate-rom`'s measured ROM endpoints — offline
+seeding from a lerobot file was removed) still cannot recover direction signs or a
+true zero on an asymmetric
 mechanism — a travel-only seed on this arm's geometry produced spans off by a
 `span_ratio` of 0.96–1.34, i.e. wrong. Treat it as a fallback for a first rough pass,
 never as the final calibration.

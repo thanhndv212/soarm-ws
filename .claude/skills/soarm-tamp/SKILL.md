@@ -84,9 +84,11 @@ The URDF default is `SO-ARM100/Simulation/SO101/so101_new_calib.urdf`, mapped th
 
 Calibrate through `soarm-dashboard-calibration` first — **see the `calibrate` skill for
 the full procedure** (reference-pose zeroing, ROM measurement, explicit acceptance
-tolerances). Do not rely on `soarm-seed-calibration`'s offline travel-only seed as the
-final calibration: it cannot recover direction signs and has measured wrong on this
-arm's geometry. Once a calibration passes acceptance:
+tolerances). Do not treat `soarm-calibrate-rom`'s sweep alone as the final
+calibration: it cannot recover direction signs and has measured wrong on this
+arm's geometry (there is no offline-from-a-lerobot-file seed path any more —
+measuring the arm's own hard stops is the only way in). Once a calibration
+passes acceptance:
 
 ```bash
 python -m soarm_tamp.validate_calibration --port /dev/cu.usbmodemXXXX
