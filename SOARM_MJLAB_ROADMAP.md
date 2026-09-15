@@ -368,7 +368,7 @@ doing so would test the deployment plumbing, not a policy worth deploying.
 ## Phase 6 — Scale beyond Reach (gated, not scheduled)
 
 Deliberately unscheduled, same philosophy as this workspace's
-`MIGRATION_PLAN.md` Part B: don't build a second task's config/reward set
+`archive/MIGRATION_PLAN.md` Part B: don't build a second task's config/reward set
 speculatively. Once Reach has cleared Phase 5 on real hardware, the same
 `tasks/<name>/` shape (env cfg + `mdp/` + per-robot config + registry entry)
 repeats for pick-place or any other task — but only when there's a concrete

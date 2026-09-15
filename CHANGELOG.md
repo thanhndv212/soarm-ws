@@ -13,6 +13,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   first-party submodule that lacked one: `imu_sdk`, `camera_calibration`,
   `m5teleop`, `soarm_lerobot`, `soarm_tamp`.
 - `CHANGELOG.md` in each of those, reconstructed from their git history.
+- `README.md` at the workspace root — overview, a package table, a screenshot slot for both
+  Viser dashboards (pending real screenshots — see `docs/images/README.md`), a recent-work
+  summary, and a link to the project webpage.
 - `soarm_tamp` — long-horizon TAMP planning (`long_tamp` on HPP) driving
   the physical SO-101, added as a submodule
   (github.com/thanhndv212/soarm_tamp). Seventh package in the workspace,
@@ -20,6 +23,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Moved `MIGRATION_PLAN.md` and `TELEMETRY_PLAN.md` into `archive/` — both are
+  fully implemented (Part B of the migration plan is deliberately gated, not
+  outstanding work) and were cluttering the root next to the one plan still
+  active, `SOARM_MJLAB_ROADMAP.md`.
 - **Relicensed `imu_sdk` and `camera_calibration` from Apache-2.0 to
   MIT**, so the whole workspace is MIT. Both had declared Apache-2.0 in
   `pyproject.toml` while shipping no `LICENSE` file; their license

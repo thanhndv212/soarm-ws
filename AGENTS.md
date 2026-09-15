@@ -27,7 +27,9 @@ soarm-ws/              ← this repo (root, tracks submodule commits)
 ├── soarm_lerobot/     ← git submodule → github.com/thanhndv212/soarm_lerobot
 ├── soarm_mjlab/       ← git submodule → github.com/thanhndv212/soarm_mjlab
 ├── soarm_tamp/        ← git submodule → github.com/thanhndv212/soarm_tamp
-└── SO-ARM100/         ← git submodule → github.com/TheRobotStudio/SO-ARM100 (read-only)
+├── SO-ARM100/         ← git submodule → github.com/TheRobotStudio/SO-ARM100 (read-only)
+├── archive/           ← completed plan docs, kept for history (not submodules)
+└── docs/images/       ← screenshots referenced by README.md (not submodules)
 ```
 
 - All packages require Python **≥3.10** (soarm_sdk: ≥3.9; soarm_tamp: ≥3.11).
@@ -246,9 +248,13 @@ Flash before using IMU:
 
 ## Related docs
 
+- `README.md` — workspace overview, package table, recent-work summary, dashboard screenshots
+  (pending — see `docs/images/README.md`), and a link to the project webpage
 - `ARCHITECTURE.md` — how the packages fit together, dependency graph, per-package details
 - `CHANGELOG.md` — workspace-level changelog (each submodule also has its own)
-- `MIGRATION_PLAN.md`, `SOARM_MJLAB_ROADMAP.md` — standing plans for ongoing migration/RL-training work
+- `SOARM_MJLAB_ROADMAP.md` — standing plan for ongoing RL-training work (active; Phase 4)
+- `archive/` — completed plan docs, kept for history: `MIGRATION_PLAN.md` (Part A done,
+  Part B deliberately gated) and `TELEMETRY_PLAN.md` (all five phases implemented)
 - `m5teleop/IMPLEMENTATION.md` — full architecture, tuning guide, phase-by-phase build log (476 lines)
 - `soarm_sdk/docs/usage.md` — servo SDK usage guide
 - `soarm_tamp/README.md` — TAMP task setup, joint-calibration caveats, plan/execute workflow
