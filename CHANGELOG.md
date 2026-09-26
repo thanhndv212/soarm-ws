@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `soarm_sdk` bumped for `soarm_sdk.dynamics` and the `soarm-identify-record`
+  console script: record a slow excitation on the arm, identify gravity +
+  friction in FIGAROH (`figaroh-examples/examples/so101/`, branch
+  `so101-identification`), load the result back as
+  `IdentifiedDynamics` for gravity compensation / admittance control.
+  Groundwork for M-D-K admittance control on the SO-101, whose STS3215
+  servos have no torque mode: the controller has to subtract predicted
+  gravity from measured current to find the external force.
+
 - `LICENSE` (MIT) at the workspace root, and MIT `LICENSE` files in every
   first-party submodule that lacked one: `imu_sdk`, `camera_calibration`,
   `m5teleop`, `soarm_lerobot`, `soarm_tamp`.

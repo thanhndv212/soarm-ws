@@ -1,6 +1,6 @@
 ---
 name: soarm-sdk
-description: 'Work in soarm_sdk — the Feetech STS/SCS servo transport, RobotInterface abstraction, tick↔URDF calibration and Viser dashboard for the SO-ARM/SO-101. Use for reading or commanding joints, joint limits and safety clamps, servo discovery/IDs/EEPROM config, tick↔radian conversions, forward kinematics, trajectory resampling, or the soarm-dashboard CLIs. Also use whenever a joint angle looks wrong by a sign or a quarter turn. For the guided calibration procedure itself, use `calibrate`.'
+description: 'Work in soarm_sdk — the Feetech STS/SCS servo transport, RobotInterface abstraction, tick↔URDF calibration and Viser dashboard for the SO-ARM/SO-101. Use for reading or commanding joints, joint limits and safety clamps, servo discovery/IDs/EEPROM config, tick↔radian conversions, forward kinematics, trajectory resampling, gravity models or dynamic-identification recording (soarm-identify-record), or the soarm-dashboard CLIs. Also use whenever a joint angle looks wrong by a sign or a quarter turn. For the guided calibration procedure itself, use `calibrate`.'
 ---
 
 # soarm_sdk — Servo Transport & Robot Interface
@@ -35,6 +35,12 @@ calibration/ tick ↔ URDF joint frame. frame (RobotCalibration, rezero_from_pos
 conversions.py  The ONLY math boundary between ticks (0–4095) and SI (rad, rad/s).
 kinematics/ URDF load + FK via yourdfpy, no viewer dependency (headless-safe).
 trajectory.py   Waypoint resampling bounding per-joint step between commands.
+dynamics/   Identification support. excitation (slow Fourier excitation), record
+            (stream + record via RobotInterface/telemetry, abort on lag/over-current),
+            log (soarm_sdk.dynamics.log/v1 CSV contract), gravity (numpy URDF
+            gravity = pinocchio's computeGeneralizedGravity), identified (load
+            FIGAROH's soarm_sdk.dynamics.identified/v1 result). The fit itself runs
+            in FIGAROH: figaroh-examples/examples/so101/.
 dashboard/  Viser browser panels. GUI wiring only — logic lives in the layers above.
 cli/        Console scripts. configs/  so101.yaml, soarm100.yaml. rate_limiter.py.
 ```
@@ -52,6 +58,7 @@ drive the same object teleop does.
 | `soarm-dashboard-calibration --device /dev/cu.usbmodemXXXX --stream` | The guided URDF-frame calibration and acceptance workflow. **Primary calibration entry point — see `calibrate`.** | yes |
 | `soarm-calibrate-rom --arm-id <name>` | Standalone ROM sweep (`--dry-run` simulates); feeds the same ROM acceptance row the dashboard's Travel tab does | yes |
 | `soarm-widen-limit` | Widen a declared joint limit that's clamping a trustworthy measured range | no |
+| `soarm-identify-record --arm-id <name> --out <dir>` | Stream a slow excitation and record q/dq/current/load in the URDF frame for gravity + friction identification in FIGAROH (`--dry-run` plans and writes without hardware). Refuses an unvalidated calibration | yes |
 
 `examples/*.py` (`reconfigure.py`, `calibrate_rom.py`, `setup_dashboard.py`,
 `calibration_dashboard.py`) are thin launchers over these, for running from a
@@ -89,6 +96,12 @@ the two. Intersection alone kept the more conservative number even once the trav
 was trustworthy, which once clamped a planned trajectory on 55% of its waypoints; an
 untrusted sweep is still handled conservatively because it can be the *encoder's*
 range on a wrapped joint, not the joint's.
+
+**Servo velocity, load and current are in the *motor* direction, not the URDF's.**
+`JointState.velocities`/`efforts` and `ServoSample.velocity_rad_s`/`current_mA`/
+`load_percent` are not multiplied by the direction sign, while positions are. On
+`wrist_roll` (sign −1) they oppose the URDF frame. `soarm_sdk.dynamics.log`
+corrects this on the way in; anything else reading torque or velocity must too.
 
 **The recurring bug in this workspace is joint frames.** Three conventions are live —
 raw ticks, lerobot normalized degrees, URDF kinematic zero. Declared joint limits were

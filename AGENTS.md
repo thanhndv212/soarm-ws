@@ -166,6 +166,7 @@ so it needs no hardware, no lerobot and no pinocchio); `soarm_sdk` and
 | Servo EEPROM reconfiguration UI | `soarm-reconfigure --device /dev/ttyUSB0 --scan-range 1-6 --ui` (console script; `python soarm_sdk/examples/reconfigure.py ...` from a checkout) |
 | Servo dashboard (browser) | `soarm-dashboard-setup --device /dev/cu.usbserial-XXXX` (every tab; calibration workflow: `soarm-dashboard-calibration`) |
 | Measure + save a URDF-frame calibration (hardware) | `soarm-calibrate-rom --arm-id <name>` (ROM sweep -> `seed_from_travel` -> `~/.soarm_sdk/calibration.json`; `--dry-run` simulates it; `python soarm_sdk/examples/calibrate_rom.py ...` from a checkout) |
+| Record a gravity/friction identification run (hardware) | `soarm-identify-record --arm-id <name> --out runs/ident01` (`--dry-run` plans and writes without hardware); fit + export in FIGAROH: `figaroh-examples/examples/so101/` (`identification.py`, `update_model.py`), load back with `soarm_sdk.dynamics.IdentifiedDynamics` |
 | Camera calibration CLI | `camera-calibration capture --images 20` (installed console script) |
 | Teleop (dry-run, no hardware) | `cd m5teleop && python teleop.py --dry-run` |
 | Teleop (full) | `cd m5teleop && python teleop.py --servo-port /dev/cu.usbserial-XXXX` |
