@@ -8,8 +8,9 @@ description: 'Work in soarm_tamp — long-horizon TAMP (long_tamp on HPP) planni
 Path: `soarm_tamp/` · v0.1.0 · hatchling, flat layout · **Python ≥3.11** ·
 no hard dependencies · extra `[host] = ["soarm_sdk"]`
 
-First task: pick a 25 mm cube from A and place it at B. **Everything here has been run
-on the physical arm** — TCP within 7.0 mm / 2.2° of the commanded pose.
+First task: pick a 30 mm cube from A and place it at B. The TCP-reach workflow
+has run on the physical arm within 7.0 mm / 2.2° of the commanded pose; the
+cube pick-and-place is planned and dry-run verified, not yet executed live.
 
 ## The two-process split — the thing to understand first
 
@@ -151,8 +152,8 @@ completion instead and **must not be read as a mapping check**.
 
 - Arm bolted to the `z = 0` plane. Cube A = (0.22, −0.10) → B = (0.22, +0.10), metres,
   base frame, inside the verified top-down annulus (r = 0.10–0.30 m).
-- **25 mm cube**, not arbitrary: `studies/reachability.py` measured jaw opening vs the
-  `gripper` angle — 29 mm clearance at +10°, 19.8 mm at 0°.
+- **30 mm cube**, not arbitrary: `studies/reachability.py` measured jaw opening vs the
+  `gripper` angle — 36.5 mm at +20° for planning and 25.2 mm at +5° for commanded grip.
 - **5-DOF mask** `<mask>1 1 1 1 1 0</mask>` on the cube's handle. Five arm joints
   against six grasp equations is solvable only where the system is degenerate; freeing
   rotation about the approach axis costs no reachability (~170° usable yaw across a
@@ -160,10 +161,10 @@ completion instead and **must not be read as a mapping check**.
 - Ceiling for a top-down reach at x = 0.22 is **z ≈ 0.08 m** — IK finds nothing at
   0.10 m, and tilting 30° off vertical finds nothing at any height at that radius. On a
   5-DOF arm orientation is coupled to position; "move it higher for safety" runs out.
-- **The table is a thin slab, so the half-space beneath it reads as free space.** HPP
-  will call a hand-below-the-table pose collision-free; it only catches paths that
-  cross the slab. With fingertips ~8 mm past the TCP frame and the collision box
-  recessed 3 mm, a hand resting on the real table can be "valid" in the model.
+- **The table collision proxy is 1 m deep and recessed 3 mm.** This closes the
+  below-table free-space hole from the old thin slab while keeping a resting
+  cube out of constant contact with the collision box. At the 20° planning
+  jaw angle the fingertip extends 6.25 mm below the TCP.
 - TCP-pose coverage is **17 of 20** top-down targets; the three failures are at
   r ≈ 0.11–0.12 m, failing inside `TransitionPlanner.computePath` on a self-collision
   (`shoulder_link` vs `gripper_link`/`moving_jaw`) on all 10 retries. Open question.
