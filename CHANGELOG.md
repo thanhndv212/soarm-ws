@@ -45,6 +45,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `soarm_tamp`'s new plan-and-run dashboard — since the branch predated all
   three. Mirrored file-for-file into `skills/`, `.claude/skills/` and
   `.github/skills/`, matching `calibrate`'s existing convention.
+- Five Claude Code subagents in `.claude/agents/`: `Explore` (read-only lookup),
+  `architect` (cross-submodule plans), `implementer` (per-package lint/test,
+  dry-run before hardware), `hardware-debugger` (joint frames, servo bus,
+  sim-to-real; asks before touching the arm, parks goals before torque) and
+  `scribe` (commits, changelogs, summaries). Claude-specific, so not mirrored
+  into `.github/`.
 
 ### Changed
 
