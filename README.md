@@ -41,6 +41,10 @@ this section will get an embed once it's recorded.
 See `AGENTS.md` for the full layout, install order, and session-start protocol; `ARCHITECTURE.md` for how
 the packages compose.
 
+The [development roadmap](docs/soarm-development-roadmap.md) proposes the next milestones:
+validated perception, observed pick-and-place, recoverable multi-step tasks, and learned local skills.
+It distinguishes implemented foundations from capabilities still awaiting validation.
+
 ## Recent work
 
 - **`soarm_sdk`:** calibration now tracks each servo's own EEPROM angle limits and refuses to connect on
