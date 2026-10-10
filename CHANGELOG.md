@@ -18,6 +18,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   servos have no torque mode: the controller has to subtract predicted
   gravity from measured current to find the external force.
 
+- `docs/soarm-development-roadmap.md` — an evidence-based proposal for perception,
+  repeatable execution, task recovery, demonstration recording and learned skills,
+  with package ownership and measurable milestone criteria.
+- `docs/perception-tamp-integration-plan.md` — the camera perception plan the
+  roadmap points to: a fixed webcam and fiducial marker locating the 30 mm cube
+  for `soarm_tamp`, observe → plan → execute → verify. A plan, not an implementation.
+- `soarm_tamp` bumped for the 30 mm cube scene (cube at `z = 0.015`, jaw frozen
+  at 20°) and plan-time checks that refuse a scene or `--start` jaw disagreeing
+  with `geometry.py`; the `soarm-tamp` skill updated to match.
 - `LICENSE` (MIT) at the workspace root, and MIT `LICENSE` files in every
   first-party submodule that lacked one: `imu_sdk`, `camera_calibration`,
   `m5teleop`, `soarm_lerobot`, `soarm_tamp`.
