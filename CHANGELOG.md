@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `tools/esp32_camera_probe.py` and `docs/esp32-camera-evaluation.md` — probe and
+  benchmark an ESP32-S3 camera (CameraWebServer HTTP, MJPEG stream or USB UVC)
+  for the perception plan's Stage 8 auxiliary view: per-resolution latency,
+  stream fps/stalls, image quality, ArUco and chessboard detectability.
+
 - `soarm_sdk` bumped for `soarm_sdk.dynamics` and the `soarm-identify-record`
   console script: record a slow excitation on the arm, identify gravity +
   friction in FIGAROH (`figaroh-examples/examples/so101/`, branch
