@@ -24,7 +24,7 @@ Pick one transport to test:
 | Firmware | How to get it | Probe command |
 |---|---|---|
 | `CameraWebServer` (Wi-Fi, recommended start) | Arduino IDE → *File → Examples → ESP32 → Camera → CameraWebServer*; select your board's `CAMERA_MODEL_*`, enable PSRAM, set SSID | `info`, `bench`, `sweep`, `stream` |
-| USB webcam (UVC) | ESP-IDF `esp-iot-solution` `usb_device_uvc` example (S3 has native USB) | `uvc --index N` |
+| USB webcam (UVC) | ESP-IDF `esp-iot-solution` `usb_webcam` example (S3 has native USB); see [§2a](#2a-flash-it-as-a-usb-webcam-uvc) | `uvc --index N` |
 | Any MJPEG URL | — | `stream --url ...` |
 
 UVC over USB removes Wi-Fi latency and jitter, and makes the S3 look like the existing
@@ -56,6 +56,47 @@ No board yet? `python tools/esp32_camera_mock.py --port 8080` emulates CameraWeb
 with a synthetic scene: a moving cube with an ArUco tag, a chessboard, and Wi-Fi-like
 latency and stalls. Point the GUI at it with `--host 127.0.0.1:8080`. Its numbers are
 **not** ESP32 measurements.
+
+## 2a. Flash it as a USB webcam (UVC)
+
+Tested on the Freenove ESP32-S3-WROOM CAM (N8R8) with ESP-IDF v5.4.2 and
+`esp-iot-solution`'s `examples/usb/device/usb_webcam` (`usb_device_uvc` 1.3.1, MJPEG only).
+The board config is [`tools/esp32_uvc/sdkconfig.freenove`](../tools/esp32_uvc/sdkconfig.freenove):
+ESP32-S3-EYE camera pins as a *custom* module (choosing the EYE board pulls in its LCD
+driver), VGA at 30 fps requested, isochronous transfer (works on macOS; bulk is faster but
+has Linux host issues).
+
+```bash
+. ~/esp/esp-idf/export.sh
+cd ~/esp/esp-iot-solution/examples/usb/device/usb_webcam
+cp <soarm-ws>/tools/esp32_uvc/sdkconfig.freenove .
+D="sdkconfig.defaults;sdkconfig.freenove"
+idf.py -D SDKCONFIG_DEFAULTS="$D" set-target esp32s3
+idf.py -D SDKCONFIG_DEFAULTS="$D" reconfigure build
+```
+
+The board has two USB-C ports. Flash through the **CH343 USB-serial port**
+(`/dev/cu.usbmodem…`, "USB Single Serial"). Auto-reset into download mode doesn't work on
+this board: hold BOOT, tap RST, release BOOT, then
+
+```bash
+cd build && python -m esptool --chip esp32s3 -p /dev/cu.usbmodemXXXX -b 460800 \
+  --before no_reset --after hard_reset write_flash @flash_args
+```
+
+Then move the cable to the **native USB port** (GPIO19/20). It enumerates as
+"ESP32-S3 UVC Camera" (macOS lists it as "UVC CAM1"). The OpenCV index depends on what else
+is attached: with the FaceTime and Continuity cameras present it was index 0. On macOS the
+process that opens it needs camera permission, so run the probe or GUI from Terminal.app,
+not from a sandboxed shell.
+
+The firmware fixes the JPEG quality per size (VGA = 12) and turns on vflip. There are no
+`/control` endpoints in UVC mode, so the GUI's sensor tab doesn't apply. To change size or
+quality, rebuild.
+
+**Going back to Wi-Fi:** reflash the CameraWebServer sketch, or write a saved merged image
+at `0x0` in download mode. A merged image built from the sketch contains the Wi-Fi
+credentials: keep it out of the repo.
 
 ## 3. Run the probe from the command line
 
@@ -137,3 +178,4 @@ runtime (`/control?var=...`). Record them with `info`.
 | 2026-10-19 | Freenove ESP32-S3-WROOM CAM (N8R8); sensor OV3660/OV5640-class (from `/status` registers, unconfirmed) | Wi-Fi, CameraWebServer (arduino-esp32 3.3.12) | 320x240 (QVGA), q=10 | 49 / 70 (30/30 ok) | 27.5 live, 20.7 snapshot | 93 % (28/30), ID 7, min edge ≈ 70 px | Preliminary: marker shown on a laptop screen at about 40 cm, not on the cube; image soft (sharpness 96, sd 40); temporal noise 34 means the scene wasn't static; no chessboard in view. Rerun at VGA+ on the side-view mount. |
 | 2026-10-19 | same | same | Sweep 320x240 → 1280x720, q=10, n=10 each | 320x240: 52/134 · 400x296: 31/66 · **640x480: 44/58** · 800x600: 52/66 · 1024x768: 76/103 · 1280x720: 86/174 (all 10/10 ok) | snapshot 17.8 / 28.2 / **22.9** / 18.4 / 12.7 / 10.1 | n/a: marker not in view during the sweep (handheld camera) | Latency and rate only. JPEG 6.7 → 41.5 KB. VGA has the tightest p95 and a usable rate; it's the size to try for the side view. At 1024x768 and up, p95 passes 100 ms. The live stream logged 7 stalls over 250 ms during the session (not a soak). |
 | 2026-10-19 | same | same, live MJPEG stream (`stream-sweep --clock`, 10 s per size) | 320x240 → 1280x720, q=10 | n/a (stream) | 25.8 / 23.7 / **20.2** / 16.2 / 8.9 / 11.2 | Lag clock read in 73–80 % of frames (marker on the Mac screen, not full-screen) | Glass-to-host lag p50/p95 ms: 127/180 · 130/181 · **140/191 (VGA)** · 158/218 · 245/381 (XGA) · 183/242 (HD). Includes the screen's display delay. No stalls or errors at any size. XGA is worse than HD on every measure: avoid it. About 130 ms of lag at any size comes from the camera and Wi-Fi, not resolution. Sharpness 38 → 5 with size: lens out of focus, refocus before the ArUco test. |
+| 2026-10-19 | same | **USB UVC** (esp-iot-solution `usb_webcam`, ESP-IDF 5.4.2, isochronous) | 640x480, MJPEG q=12 (firmware fixed) | n/a (stream) | 19.7 (10 s, 177 frames) | n/a: no marker in view | Frames arrive in **bursts**: interframe p50 0.8 ms, p95 248 ms, max 252 ms (1 gap over 250 ms), i.e. about 5 frames every 250 ms. No lag-clock run yet. Camera pointed at the ceiling: sharpness 3.0 is the scene plus the defocused lens, not comparable with the Wi-Fi rows. Same frame rate as Wi-Fi VGA (20.2), so USB alone doesn't buy throughput; the gain to test is lag and jitter. |
