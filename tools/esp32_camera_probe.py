@@ -23,6 +23,10 @@ Examples::
     python tools/esp32_camera_probe.py sweep --host 192.168.1.42 --framesizes 6,8,10,11,12,13
     python tools/esp32_camera_probe.py stream --url http://192.168.1.42:81/stream --duration 20
     python tools/esp32_camera_probe.py uvc --index 1 --duration 20
+
+    # live-stream fps / stalls / glass-to-host lag per framesize, no manual switching:
+    python tools/esp32_camera_probe.py clock-page --out runs/esp32/clock.html   # open full-screen
+    python tools/esp32_camera_probe.py stream-sweep --host 192.168.1.42 --clock --duration 10
 """
 
 from __future__ import annotations
@@ -65,6 +69,18 @@ def http_control(host: str, var: str, val: int, timeout: float) -> None:
     _get(f"http://{host}/control?var={var}&val={val}", timeout)
 
 
+def stream_url_for(host: str) -> str:
+    """CameraWebServer serves the stream on the control port + 1 (80 -> 81)."""
+    name, _, port = host.partition(":")
+    return f"http://{name}:{int(port or 80) + 1}/stream"
+
+
+def clock_ids(dict_name: str) -> int:
+    """How many IDs the lag clock cycles through: the dictionary size, capped at 50."""
+    d = cv2.aruco.getPredefinedDictionary(getattr(cv2.aruco, dict_name))
+    return min(50, d.bytesList.shape[0])
+
+
 def http_capture(host: str, timeout: float) -> tuple[bytes, float]:
     """One still JPEG plus its round-trip time in seconds (host receipt clock)."""
     t0 = time.perf_counter()
@@ -81,7 +97,9 @@ def iter_mjpeg(url: str, timeout: float):
     with urllib.request.urlopen(url, timeout=timeout) as r:
         buf = b""
         while True:
-            chunk = r.read(4096)
+            # read1, not read: read(n) blocks until n bytes arrive, which holds each
+            # frame's tail back until the next frame starts and skews every timestamp.
+            chunk = r.read1(65536)
             if not chunk:
                 return
             buf += chunk
@@ -312,6 +330,174 @@ def sweep(host, framesizes, n, timeout, settle, aruco, chessboard, save,
     return results
 
 
+# --------------------------------------------------------------- stream + lag
+
+
+def clock_page_html(dict_name: str = "DICT_4X4_50", period_ms: int = 100, n_ids: int = 50) -> str:
+    """A page that shows marker ``floor(now / period) % n_ids``, from the host's clock.
+
+    Open it on a screen driven by the machine that runs the benchmark and point
+    the camera at it: the marker ID in each received frame then says when that
+    frame's light left the screen, so receipt time minus that is glass-to-host lag.
+    """
+    d = cv2.aruco.getPredefinedDictionary(getattr(cv2.aruco, dict_name))
+    side = d.markerSize + 2  # one black border cell each side
+    bits = [(cv2.aruco.generateImageMarker(d, i, side) > 127).astype(int).ravel().tolist()
+            for i in range(n_ids)]
+    return f"""<!doctype html><html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Camera lag clock</title>
+<style>html,body{{margin:0;height:100%;background:#fff;color:#000;font:14px system-ui}}
+body{{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px}}
+canvas{{width:min(70vmin,560px);height:min(70vmin,560px);image-rendering:pixelated}}</style></head>
+<body><canvas id="c" width="{side + 2}" height="{side + 2}"></canvas>
+<div id="t">{dict_name}, one ID per {period_ms} ms, IDs 0-{n_ids - 1}. Keep only this marker in view.</div>
+<script>
+const BITS={json.dumps(bits)}, SIDE={side}, PERIOD={period_ms}, N={n_ids};
+const ctx=document.getElementById('c').getContext('2d'); let shown=-1;
+function draw(){{
+  const id=Math.floor(Date.now()/PERIOD)%N;
+  if(id!==shown){{
+    ctx.fillStyle='#fff'; ctx.fillRect(0,0,SIDE+2,SIDE+2); ctx.fillStyle='#000';
+    BITS[id].forEach((b,k)=>{{ if(!b) ctx.fillRect(1+k%SIDE,1+Math.floor(k/SIDE),1,1); }});
+    shown=id;
+  }}
+  requestAnimationFrame(draw);
+}}
+draw();
+</script></body></html>
+"""
+
+
+def clock_lag_ms(t_wall: float, marker_id: int, period_s: float, n_ids: int) -> float:
+    """Lag of a frame that shows clock marker ``marker_id``, received at ``t_wall``.
+
+    The screen showed that ID during the most recent slot ``s <= now`` with
+    ``s % n_ids == marker_id``. The camera sampled somewhere inside the slot, so
+    the slot midpoint is the estimate; each sample is quantised to +-period/2,
+    the median over many frames is not. Includes the screen's own display delay.
+    """
+    now_slot = int(t_wall // period_s)
+    slot = now_slot - (now_slot - marker_id) % n_ids
+    return (t_wall - (slot + 0.5) * period_s) * 1000
+
+
+def bench_stream(url, duration, timeout, aruco, chessboard, save, tag="stream",
+                 warmup=1.0, clock: dict | None = None) -> dict:
+    """Record the raw MJPEG stream, *then* analyse it.
+
+    Reading is not slowed by decoding or detection, so fps and inter-frame gaps
+    are what the camera and network deliver. ``clock`` = {"detector", "period_ms",
+    "n_ids"} enables glass-to-host lag from a ``clock_page_html`` screen in view.
+    """
+    wall_offset = time.time() - time.monotonic()
+    rec, errors, t0 = [], [], None
+    try:
+        for jpeg, t in iter_mjpeg(url, timeout):
+            t0 = t if t0 is None else t0
+            if t - t0 < warmup:  # frames queued before/around the connect
+                continue
+            rec.append((jpeg, t))
+            if t - t0 >= warmup + duration:
+                break
+    except (urllib.error.URLError, TimeoutError, OSError) as e:
+        errors.append(repr(e))
+
+    stamps = [t for _, t in rec]
+    gaps = [(b - a) * 1000 for a, b in zip(stamps, stamps[1:])]
+    span = stamps[-1] - stamps[0] if len(stamps) > 1 else 0
+    per_frame, frames, decode_ms, lags, clock_ids_seen = [], [], [], [], []
+    for i, (jpeg, t) in enumerate(rec):
+        d0 = time.perf_counter()
+        img = _decode(jpeg)
+        decode_ms.append((time.perf_counter() - d0) * 1000)
+        if img is None:
+            errors.append("jpeg decode failed")
+            continue
+        if clock is not None:
+            gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+            _, ids, _ = clock["detector"].detectMarkers(gray)
+            if ids is not None and len(ids) == 1:
+                clock_ids_seen.append(int(ids[0][0]))
+                lags.append(clock_lag_ms(t + wall_offset, int(ids[0][0]),
+                                         clock["period_ms"] / 1000, clock["n_ids"]))
+        if i % 5 == 0:
+            per_frame.append(frame_metrics(img, aruco, chessboard))
+            if len(frames) < 30:
+                frames.append(img)
+        _save(save, tag, i, jpeg)
+    out = {
+        "mode": "mjpeg-stream",
+        "duration_s": span,
+        "frames": len(rec),
+        "fps": (len(rec) - 1) / span if span else None,
+        "interframe_ms": summarize(gaps),
+        "stalls_over_250ms": sum(g > 250 for g in gaps),
+        "jpeg_kb": summarize([len(j) / 1024 for j, _ in rec]),
+        "host_decode_ms": summarize(decode_ms),
+        "errors": errors[:10],
+        "error_count": len(errors),
+        **aggregate(per_frame, frames),
+    }
+    if clock is not None:
+        out["clock_detect_rate"] = len(clock_ids_seen) / len(rec) if rec else 0.0
+        # A printed or stuck marker also decodes as one ID; only a running clock
+        # cycles through many. Without that, the "lag" would be meaningless.
+        expected = min(clock["n_ids"], span * 1000 / clock["period_ms"], len(clock_ids_seen))
+        out["clock_ids_distinct"] = len(set(clock_ids_seen))
+        out["clock_ok"] = bool(clock_ids_seen) and len(set(clock_ids_seen)) >= max(3, 0.3 * expected)
+        out["lag_ms"] = summarize(lags) if out["clock_ok"] else None
+    return out
+
+
+def stream_sweep(host, stream_url, framesizes, duration, timeout, settle, aruco, chessboard,
+                 save, clock=None, progress=None) -> list[dict]:
+    """``bench_stream`` at each framesize, then restore the original one.
+
+    ``progress(step, total)`` counts framesizes.
+    """
+    original = http_status(host, timeout).get("framesize")
+    results = []
+    try:
+        for k, fs in enumerate(framesizes):
+            if progress is not None:
+                progress(k, len(framesizes))
+            try:
+                http_control(host, "framesize", fs, timeout)
+            except urllib.error.URLError as e:
+                results.append({"framesize": fs, "error": repr(e)})
+                continue
+            time.sleep(settle)
+            r = bench_stream(stream_url, duration, timeout, aruco, chessboard, save,
+                             tag=f"stream_fs{fs}", clock=clock)
+            results.append({"framesize": fs, "name": FRAMESIZE_NAMES.get(fs, "?"), **r})
+    finally:
+        if original is not None:
+            http_control(host, "framesize", original, timeout)
+    return results
+
+
+def print_stream_sweep_table(results: list[dict]) -> None:
+    hdr = f"{'fs':>3} {'name':8} {'res':>10} {'fps':>5} {'gap50':>6} {'gap95':>6} {'stall':>5} " \
+          f"{'KB':>6} {'lag50':>6} {'lag95':>6} {'clock':>6} {'dec':>5}"
+    print(hdr, file=sys.stderr)
+    for r in results:
+        if "error" in r:
+            print(f"{r['framesize']:>3} error: {r['error']}", file=sys.stderr)
+            continue
+        g, kb, lag, dec = (r.get(k) or {} for k in ("interframe_ms", "jpeg_kb", "lag_ms",
+                                                     "host_decode_ms"))
+        cr = r.get("clock_detect_rate")
+        f = lambda d, k: f"{d[k]:6.0f}" if k in d else f"{'-':>6}"  # noqa: E731
+        print(f"{r['framesize']:>3} {r['name']:8} {','.join(r['resolutions']):>10} "
+              f"{r['fps'] or 0:5.1f} {f(g, 'p50')} {f(g, 'p95')} {r['stalls_over_250ms']:>5} "
+              f"{kb.get('mean', 0):6.1f} {f(lag, 'p50')} {f(lag, 'p95')} "
+              f"{'' if cr is None else f'{cr:.0%}' + ('' if r.get('clock_ok') else '!'):>6} "
+              f"{dec.get('p50', 0):5.1f}", file=sys.stderr)
+    if any(r.get("clock_ok") is False for r in results):
+        print("! a marker was seen but its ID never cycled: not the lag clock, so no lag",
+              file=sys.stderr)
+
+
 def cmd_sweep(a, aruco, chessboard) -> dict:
     framesizes = [int(x) for x in a.framesizes.split(",")]
     return {"sweep": sweep(a.host, framesizes, a.n, a.timeout, a.settle,
@@ -363,6 +549,22 @@ def main(argv=None) -> int:
     s.add_argument("--url", required=True, help="e.g. http://<ip>:81/stream")
     s.add_argument("--duration", type=float, default=15.0)
 
+    s = sub.add_parser("stream-sweep", parents=[common],
+                       help="live stream at several framesizes: fps, gaps, stalls, glass-to-host lag")
+    s.add_argument("--host", required=True)
+    s.add_argument("--stream-url", default=None, help="default: http://HOST:PORT+1/stream")
+    s.add_argument("--framesizes", default="6,8,10,11,12,13")
+    s.add_argument("--duration", type=float, default=10.0, help="seconds per framesize")
+    s.add_argument("--settle", type=float, default=1.0, help="wait after a size change [s]")
+    s.add_argument("--clock", action="store_true",
+                   help="measure lag from a `clock-page` screen in view (uses --aruco-dict)")
+    s.add_argument("--clock-period-ms", type=int, default=100)
+
+    s = sub.add_parser("clock-page", parents=[common],
+                       help="write the lag-clock page (open it on this machine's screen)")
+    s.add_argument("--out", type=Path, required=True)
+    s.add_argument("--clock-period-ms", type=int, default=100)
+
     s = sub.add_parser("uvc", parents=[common], help="S3 as USB webcam via OpenCV VideoCapture")
     s.add_argument("--index", type=int, default=0)
     s.add_argument("--width", type=int, default=0)
@@ -380,6 +582,23 @@ def main(argv=None) -> int:
     elif a.cmd == "sweep":
         report = cmd_sweep(a, aruco, chessboard)
         print_sweep_table(report["sweep"])
+    elif a.cmd == "clock-page":
+        a.out.parent.mkdir(parents=True, exist_ok=True)
+        a.out.write_text(clock_page_html(a.aruco_dict, a.clock_period_ms, clock_ids(a.aruco_dict)))
+        print(f"wrote {a.out}; open it full-screen on this machine", file=sys.stderr)
+        return 0
+    elif a.cmd == "stream-sweep":
+        clock = None
+        if a.clock:
+            clock = {"detector": _aruco_detector(a.aruco_dict), "period_ms": a.clock_period_ms,
+                     "n_ids": clock_ids(a.aruco_dict)}
+        url = a.stream_url or stream_url_for(a.host)
+        report = {"stream_sweep": stream_sweep(
+            a.host, url, [int(x) for x in a.framesizes.split(",")], a.duration, a.timeout,
+            a.settle, aruco, chessboard, a.save, clock=clock)}
+        if clock:
+            report["clock"] = {"period_ms": a.clock_period_ms, "n_ids": clock["n_ids"]}
+        print_stream_sweep_table(report["stream_sweep"])
     elif a.cmd == "stream":
         report = bench_frames(_mjpeg_frames(a.url, a.timeout), a.duration,
                               aruco, chessboard, a.save, "mjpeg-stream")

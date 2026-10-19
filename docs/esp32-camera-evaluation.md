@@ -45,7 +45,8 @@ owns the camera. It shows:
 - sharpness, brightness, temporal noise and clipped pixels
 - every CameraWebServer sensor control: resolution, JPEG quality, exposure, gain, white
   balance, lens correction, mirror/flip and colour bar
-- one-click snapshot benchmark and resolution sweep, with the stream paused while they
+- one-click snapshot benchmark, resolution sweep and stream sweep (live fps, gaps, stalls,
+  and glass-to-host lag with the `/clock` page in view), with the stream paused while they
   run and the original resolution restored afterwards
 
 Snapshots and `report.json` files go to `runs/esp32_gui/`. Temporal noise is only
@@ -66,6 +67,25 @@ python $P sweep --host $H --framesizes 6,8,10,11,12,13 -n 20  --json runs/esp32/
 python $P bench --host $H -n 100 --save runs/esp32/frames     --json runs/esp32/bench_vga.json
 python $P stream --url http://$H:81/stream --duration 60      --json runs/esp32/stream.json
 ```
+
+**Live-stream lag per resolution, without switching by hand.** `sweep` times `/capture`
+snapshots, which is not what the live view feels like. `stream-sweep` sets each framesize,
+records the MJPEG stream for `--duration` seconds, then analyses it, so the measurement
+doesn't throttle the stream. It reports fps, frame-gap p50/p95/max and stalls per size, and
+restores the original size afterwards. For **glass-to-host lag**, open the lag clock
+full-screen on the machine that runs the benchmark: a marker whose ID changes every 100 ms,
+driven by that machine's clock. Point the camera at it, keep other markers out of view, and
+add `--clock`:
+
+```bash
+python $P clock-page --out runs/esp32/clock.html     # open full-screen; the GUI also serves /clock
+python $P stream-sweep --host $H --clock --duration 10 --json runs/esp32/stream_sweep.json
+```
+
+Each lag sample is quantised to ±50 ms, but the median is not. The lag includes the screen's
+own display delay (about one refresh), so it is an upper bound on the camera's lag. If the
+marker's ID doesn't cycle, for example a printed tag, the run is flagged and gives no lag.
+The GUI runs the same thing with **Run stream sweep** (tick *Measure lag*).
 
 Run `bench`/`stream` with these scenes, keeping each one static:
 
@@ -114,4 +134,6 @@ runtime (`/control?var=...`). Record them with `info`.
 
 | Date | Board / sensor | Transport | Resolution | Snapshot p50/p95 ms | Stream fps | ArUco rate @ distance | Notes |
 |---|---|---|---|---|---|---|---|
-| | | | | | | | |
+| 2026-10-19 | Freenove ESP32-S3-WROOM CAM (N8R8); sensor OV3660/OV5640-class (from `/status` registers, unconfirmed) | Wi-Fi, CameraWebServer (arduino-esp32 3.3.12) | 320x240 (QVGA), q=10 | 49 / 70 (30/30 ok) | 27.5 live, 20.7 snapshot | 93 % (28/30), ID 7, min edge ≈ 70 px | Preliminary: marker shown on a laptop screen at about 40 cm, not on the cube; image soft (sharpness 96, sd 40); temporal noise 34 means the scene wasn't static; no chessboard in view. Rerun at VGA+ on the side-view mount. |
+| 2026-10-19 | same | same | Sweep 320x240 → 1280x720, q=10, n=10 each | 320x240: 52/134 · 400x296: 31/66 · **640x480: 44/58** · 800x600: 52/66 · 1024x768: 76/103 · 1280x720: 86/174 (all 10/10 ok) | snapshot 17.8 / 28.2 / **22.9** / 18.4 / 12.7 / 10.1 | n/a: marker not in view during the sweep (handheld camera) | Latency and rate only. JPEG 6.7 → 41.5 KB. VGA has the tightest p95 and a usable rate; it's the size to try for the side view. At 1024x768 and up, p95 passes 100 ms. The live stream logged 7 stalls over 250 ms during the session (not a soak). |
+| 2026-10-19 | same | same, live MJPEG stream (`stream-sweep --clock`, 10 s per size) | 320x240 → 1280x720, q=10 | n/a (stream) | 25.8 / 23.7 / **20.2** / 16.2 / 8.9 / 11.2 | Lag clock read in 73–80 % of frames (marker on the Mac screen, not full-screen) | Glass-to-host lag p50/p95 ms: 127/180 · 130/181 · **140/191 (VGA)** · 158/218 · 245/381 (XGA) · 183/242 (HD). Includes the screen's display delay. No stalls or errors at any size. XGA is worse than HD on every measure: avoid it. About 130 ms of lag at any size comes from the camera and Wi-Fi, not resolution. Sharpness 38 → 5 with size: lens out of focus, refocus before the ArUco test. |

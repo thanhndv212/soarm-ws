@@ -7,6 +7,9 @@ reconnects on failure, measures frame rate / jitter / stalls / image quality
 live, draws ArUco and chessboard detections, exposes every CameraWebServer
 sensor control, and runs the snapshot benchmark and framesize sweep from
 ``esp32_camera_probe`` while pausing the stream so they don't fight over it.
+The stream sweep measures the live stream per framesize; with the lag clock
+(``/clock``, opened on this machine's screen) in view it also measures
+glass-to-host lag.
 
     python tools/esp32_camera_gui.py --host 192.168.1.42        # CameraWebServer
     python tools/esp32_camera_gui.py --uvc 1                    # S3 as USB webcam
@@ -39,12 +42,10 @@ import esp32_camera_probe as probe  # noqa: E402
 HTML = Path(__file__).with_name("esp32_camera_gui.html")
 ARUCO_DICTS = ["DICT_4X4_50", "DICT_5X5_100", "DICT_6X6_250", "DICT_7X7_1000", "DICT_ARUCO_ORIGINAL"]
 STALL_MS = 250
+CLOCK_PERIOD_MS = 100
 
 
-def stream_url_for(host: str) -> str:
-    """CameraWebServer serves the stream on the control port + 1 (80 -> 81)."""
-    name, _, port = host.partition(":")
-    return f"http://{name}:{int(port or 80) + 1}/stream"
+stream_url_for = probe.stream_url_for
 
 
 class Camera:
@@ -260,17 +261,19 @@ class Jobs:
                       "error": None, "finished_utc": None}
         self.lock = threading.Lock()
 
-    def start(self, kind: str, n: int, framesizes: list[int]) -> None:
+    def start(self, kind: str, n: int, framesizes: list[int], duration: float = 10.0,
+              clock: bool = False) -> None:
         with self.lock:
             if self.state["running"]:
                 raise RuntimeError("a benchmark is already running")
             self.state.update(running=True, kind=kind, progress=0.0, error=None)
-        threading.Thread(target=self._run, args=(kind, n, framesizes), daemon=True).start()
+        threading.Thread(target=self._run, args=(kind, n, framesizes, duration, clock),
+                         daemon=True).start()
 
     def _progress(self, i, n):
         self.state["progress"] = i / max(n, 1)
 
-    def _run(self, kind, n, framesizes):
+    def _run(self, kind, n, framesizes, duration, clock):
         cam = self.cam
         cam.paused.set()
         cam.idle.wait(timeout=cam.timeout + 2)
@@ -278,15 +281,27 @@ class Jobs:
             pattern = cam._pattern()
             aruco = probe._aruco_detector(cam.overlay["aruco_dict"]) if cam.overlay["aruco"] else None
             save = cam.save_dir / time.strftime("bench_%Y%m%d_%H%M%S")
+            meta = {}
             if kind == "bench":
                 result = probe.bench_snapshots(cam.host, n, cam.timeout, aruco, pattern, save,
                                                progress=self._progress)
+            elif kind == "stream-sweep":
+                clk = None
+                if clock:
+                    d = cam.overlay["aruco_dict"]
+                    clk = {"detector": probe._aruco_detector(d), "period_ms": CLOCK_PERIOD_MS,
+                           "n_ids": probe.clock_ids(d)}
+                    meta["clock"] = {"period_ms": CLOCK_PERIOD_MS, "n_ids": clk["n_ids"]}
+                result = {"stream_sweep": probe.stream_sweep(
+                    cam.host, cam.stream_url, framesizes, duration, cam.timeout, 1.0, aruco,
+                    pattern, save, clock=clk, progress=self._progress)}
+                meta["duration_s"] = duration
             else:
                 result = {"sweep": probe.sweep(cam.host, framesizes, n, cam.timeout, 1.0, aruco,
                                                pattern, save, progress=self._progress)}
             result["meta"] = {"kind": kind, "host": cam.host, "n": n, "aruco_dict": cam.overlay["aruco_dict"],
                               "utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-                              "opencv": cv2.__version__}
+                              "opencv": cv2.__version__, **meta}
             save.mkdir(parents=True, exist_ok=True)
             (save / "report.json").write_text(json.dumps(result, indent=2, default=float))
             result["meta"]["report"] = str(save / "report.json")
@@ -340,6 +355,14 @@ def make_handler(cam: Camera, jobs: Jobs, args):
                 self.send_header("Content-Length", str(len(body)))
                 self.end_headers()
                 self.wfile.write(body)
+            elif self.path.startswith("/clock"):
+                body = probe.clock_page_html(cam.overlay["aruco_dict"], CLOCK_PERIOD_MS,
+                                             probe.clock_ids(cam.overlay["aruco_dict"])).encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
             elif self.path.startswith("/video"):
                 self._video()
             elif self.path.startswith("/api/state"):
@@ -370,7 +393,8 @@ def make_handler(cam: Camera, jobs: Jobs, args):
                     if cam.host is None:
                         raise RuntimeError("snapshot benchmarks need a CameraWebServer host")
                     jobs.start(body.get("kind", "bench"), int(body.get("n", 30)),
-                               [int(x) for x in body.get("framesizes", [6, 8, 10, 11, 12, 13])])
+                               [int(x) for x in body.get("framesizes", [6, 8, 10, 11, 12, 13])],
+                               float(body.get("duration", 10)), bool(body.get("clock", False)))
                     self._json({"ok": True})
                 elif self.path == "/api/snapshot":
                     self._json({"ok": True, "path": cam.snapshot()})

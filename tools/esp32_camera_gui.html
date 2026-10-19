@@ -167,8 +167,15 @@ code { font-family: var(--mono); font-size: 12px; }
         <label for="fs">Sweep sizes</label><input type="text" id="fs" value="6,8,10,11,12,13" style="flex:1">
         <button id="run-sweep">Run sweep</button>
       </div>
+      <div class="row">
+        <label for="sd">Seconds / size</label><input type="number" id="sd" value="10" min="2" max="120" style="width:80px">
+        <label><input type="checkbox" id="clk"> Measure lag</label>
+        <button id="run-stream">Run stream sweep</button>
+      </div>
       <div class="progress"><div id="prog"></div></div>
       <p class="note" id="jobnote">The live stream pauses while a benchmark runs. A sweep restores the original resolution when it finishes.</p>
+      <p class="note">Stream sweep: fps, frame gaps and stalls of the live stream at each sweep size. For lag, open the
+        <a href="/clock" target="_blank">lag clock</a> on this computer's screen, put only that marker in view, and tick <em>Measure lag</em>.</p>
     </section>
 
     <section class="card">
@@ -418,12 +425,16 @@ $("run-sweep").onclick = () => post("/api/job", {
   kind: "sweep", n: Math.max(3, Math.round(+$("bn").value / 3)),
   framesizes: $("fs").value.split(",").map((x) => +x.trim()).filter((x) => !Number.isNaN(x)),
 }).catch((e) => toast(e.message, true));
+$("run-stream").onclick = () => post("/api/job", {
+  kind: "stream-sweep", duration: +$("sd").value, clock: $("clk").checked,
+  framesizes: $("fs").value.split(",").map((x) => +x.trim()).filter((x) => !Number.isNaN(x)),
+}).catch((e) => toast(e.message, true));
 $("snap").onclick = () => post("/api/snapshot").then((j) => toast("Saved " + j.path)).catch((e) => toast(e.message, true));
 
 let shownResult = null;
 function renderJob(job) {
   $("prog").style.width = Math.round((job.progress || 0) * 100) + "%";
-  $("run-bench").disabled = $("run-sweep").disabled = job.running || (state && state.source.kind !== "http");
+  $("run-bench").disabled = $("run-sweep").disabled = $("run-stream").disabled = job.running || (state && state.source.kind !== "http");
   if (job.running) $("jobnote").textContent = `Running ${job.kind}… ${Math.round(job.progress * 100)}%`;
   else if (job.error) $("jobnote").innerHTML = `<span class="bad">✕ ${esc(job.error)}</span>`;
   else if (job.result) $("jobnote").textContent = `Finished ${job.kind} at ${job.finished_utc}. Report: ${job.result.meta.report}`;
@@ -434,7 +445,22 @@ function renderJob(job) {
 function renderResult(r) {
   $("results-card").hidden = false;
   const s = (o, k, d = 0) => (o && o[k] != null ? fmt(o[k], d) : "–");
-  if (r.sweep) {
+  const pct = (v) => (v == null ? "–" : Math.round(v * 100) + "%");
+  if (r.stream_sweep) {
+    const lag = r.meta && r.meta.clock;
+    $("results-title").textContent = `Stream sweep · ${r.meta.duration_s} s per size`;
+    $("results").innerHTML = `<div class="tablewrap"><table><thead><tr>
+      <th>Framesize</th><th>Resolution</th><th>fps</th><th>Gap p50</th><th>Gap p95</th><th>Gap max</th><th>Stalls</th><th>KB</th>
+      ${lag ? "<th>Lag p50</th><th>Lag p95</th><th>Clock seen</th>" : ""}<th>Decode ms</th><th>Sharpness</th><th>ArUco</th></tr></thead><tbody>
+      ${r.stream_sweep.map((x) => x.error ? `<tr><td>${x.framesize}</td><td colspan="13" class="bad" style="text-align:left;white-space:normal">✕ ${esc(x.error)}</td></tr>` :
+      `<tr><td>${x.framesize} · ${esc(x.name)}</td><td>${x.resolutions.join(",") || "–"}</td><td>${fmt(x.fps)}</td>
+      <td>${s(x.interframe_ms, "p50")}</td><td>${s(x.interframe_ms, "p95")}</td><td>${s(x.interframe_ms, "max")}</td>
+      <td class="${x.stalls_over_250ms ? "bad" : ""}">${x.stalls_over_250ms}</td><td>${s(x.jpeg_kb, "mean", 1)}</td>
+      ${lag ? `<td>${s(x.lag_ms, "p50")}</td><td>${s(x.lag_ms, "p95")}</td><td class="${x.clock_ok === false ? "bad" : ""}" title="${x.clock_ok === false ? "a marker was seen but its ID never cycled: not the lag clock" : ""}">${pct(x.clock_detect_rate)}${x.clock_ok === false ? " ✕" : ""}</td>` : ""}
+      <td>${s(x.host_decode_ms, "p50", 1)}</td><td>${s(x.sharpness, "mean")}</td><td>${pct(x.aruco_detect_rate)}</td></tr>`).join("")}
+      </tbody></table></div><p class="note">The stream is recorded first and analysed afterwards, so host processing does not slow it.
+      Gaps are host receive intervals in ms. ${lag ? `Lag is glass-to-host: lag-clock time on screen to frame receipt, including the screen's own display delay (about one refresh). Each sample is ±${r.meta.clock.period_ms / 2} ms; the median isn't.` : "Tick Measure lag with the lag clock in view to add glass-to-host lag."}</p>`;
+  } else if (r.sweep) {
     $("results-title").textContent = "Resolution sweep (HTTP snapshots)";
     $("results").innerHTML = `<div class="tablewrap"><table><thead><tr>
       <th>Framesize</th><th>Resolution</th><th>OK</th><th>p50 ms</th><th>p95 ms</th><th>Snap fps</th><th>KB</th><th>Sharpness</th><th>Noise σ</th><th>ArUco</th><th>Chessboard</th></tr></thead><tbody>
@@ -470,7 +496,7 @@ async function poll() {
     $("src").textContent = s.source.kind === "http" ? s.source.stream_url : `UVC index ${s.source.uvc}`;
     if (conn === "streaming" && lastConn !== "streaming") $("video").src = "/video?" + Date.now();
     $("vmsg").style.display = conn === "streaming" ? "none" : "block";
-    $("vmsg").textContent = conn === "paused" ? "Stream paused while the benchmark uses /capture…"
+    $("vmsg").textContent = conn === "paused" ? `Stream paused while the ${state && state.job.kind || "benchmark"} runs…`
       : conn === "reconnecting" ? `Reconnecting… ${s.last_error}` : "Connecting to camera…";
     lastConn = conn;
     if (s.live.resolution) {
