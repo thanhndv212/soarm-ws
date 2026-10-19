@@ -30,7 +30,33 @@ Pick one transport to test:
 UVC over USB removes Wi-Fi latency and jitter, and makes the S3 look like the existing
 webcam to `camera_calibration`. Test it if Wi-Fi numbers disappoint.
 
-## 2. Run the probe
+## 2. Explore it in the GUI
+
+```bash
+python tools/esp32_camera_gui.py --host 192.168.1.42 --open   # CameraWebServer
+python tools/esp32_camera_gui.py --uvc 1 --open               # S3 flashed as USB webcam
+```
+
+The GUI is a local web server on `http://127.0.0.1:8000`, and it is the only process that
+owns the camera. It shows:
+
+- the live view with ArUco and chessboard detections drawn on it
+- live frame rate, frame-interval p50/p95/max, stalls over 250 ms and reconnects
+- sharpness, brightness, temporal noise and clipped pixels
+- every CameraWebServer sensor control: resolution, JPEG quality, exposure, gain, white
+  balance, lens correction, mirror/flip and colour bar
+- one-click snapshot benchmark and resolution sweep, with the stream paused while they
+  run and the original resolution restored afterwards
+
+Snapshots and `report.json` files go to `runs/esp32_gui/`. Temporal noise is only
+meaningful when the scene is static.
+
+No board yet? `python tools/esp32_camera_mock.py --port 8080` emulates CameraWebServer
+with a synthetic scene: a moving cube with an ArUco tag, a chessboard, and Wi-Fi-like
+latency and stalls. Point the GUI at it with `--host 127.0.0.1:8080`. Its numbers are
+**not** ESP32 measurements.
+
+## 3. Run the probe from the command line
 
 ```bash
 H=192.168.1.42                       # IP printed on the ESP32 serial monitor
@@ -57,7 +83,7 @@ Run `bench`/`stream` with these scenes, keeping each one static:
 `sweep` restores the original framesize when it finishes. The framesize enum differs
 between esp32-camera releases, so trust the decoded `resolutions` field, not the name.
 
-## 3. What to look at
+## 4. What to look at
 
 | Metric (report field) | Why it matters here | Auxiliary-view gate (proposed) |
 |---|---|---|
@@ -72,7 +98,7 @@ These gates are proposed, not measured. Set the numbers once the first run gives
 Keep the resolution, JPEG quality, AEC/AGC and white balance fixed between calibration and
 runtime (`/control?var=...`). Record them with `info`.
 
-## 4. Known constraints to confirm or rule out
+## 5. Known constraints to confirm or rule out
 
 - **No hardware timestamp or clock sync.** Use host receive time minus measured latency (the
   perception plan says this explicitly). Frame-to-arm sync tighter than the latency jitter
@@ -84,7 +110,7 @@ runtime (`/control?var=...`). Record them with `info`.
 - **The camera server is single-client.** Holding `:81/stream` open can block `/capture`
   on some firmware versions. Only one host process should own the camera.
 
-## 5. Results
+## 6. Results
 
 | Date | Board / sensor | Transport | Resolution | Snapshot p50/p95 ms | Stream fps | ArUco rate @ distance | Notes |
 |---|---|---|---|---|---|---|---|

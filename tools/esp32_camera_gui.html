@@ -1,0 +1,499 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ESP32 Camera Bench</title>
+<link rel="icon" href="data:,">
+<style>
+:root {
+  color-scheme: light;
+  --bg: #f4f4f2; --surface-1: #fcfcfb; --surface-2: #efeeea; --border: #dcdbd5;
+  --text-primary: #0b0b0b; --text-secondary: #52514e; --text-muted: #7a7974;
+  --accent: #2a78d6; --accent-ink: #fff; --series-1: #2a78d6; --grid: #e6e5e0;
+  --good: #1a7f37; --warn: #9a6700; --bad: #cf222e; --video-bg: #111;
+  --radius: 10px; --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #121211; --surface-1: #1a1a19; --surface-2: #232321; --border: #33332f;
+    --text-primary: #f0efec; --text-secondary: #c3c2b7; --text-muted: #8f8e86;
+    --accent: #3987e5; --series-1: #3987e5; --grid: #2a2a27;
+    --good: #3fb950; --warn: #d29922; --bad: #f85149;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #121211; --surface-1: #1a1a19; --surface-2: #232321; --border: #33332f;
+  --text-primary: #f0efec; --text-secondary: #c3c2b7; --text-muted: #8f8e86;
+  --accent: #3987e5; --series-1: #3987e5; --grid: #2a2a27;
+  --good: #3fb950; --warn: #d29922; --bad: #f85149;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text-primary);
+  font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+header { display: flex; align-items: center; gap: 14px; padding: 12px 20px;
+  border-bottom: 1px solid var(--border); background: var(--surface-1); flex-wrap: wrap; }
+header h1 { font-size: 16px; margin: 0; font-weight: 650; }
+header .src { color: var(--text-secondary); font-family: var(--mono); font-size: 12px; }
+header .spacer { flex: 1; }
+.pill { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 99px;
+  font-size: 12px; font-weight: 600; border: 1px solid currentColor; }
+.pill.streaming { color: var(--good); } .pill.reconnecting, .pill.connecting { color: var(--warn); }
+.pill.paused { color: var(--accent); } .pill.error { color: var(--bad); }
+.pill svg { width: 10px; height: 10px; }
+main { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 16px; padding: 16px 20px;
+  max-width: 1600px; margin: 0 auto; }
+@media (max-width: 1000px) { main { grid-template-columns: minmax(0, 1fr); padding: 12px 16px; } }
+.card { background: var(--surface-1); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 14px 16px; }
+.card h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-secondary);
+  margin: 0 0 10px; font-weight: 650; }
+.stack { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.video { position: relative; background: var(--video-bg); border-radius: var(--radius); overflow: hidden;
+  aspect-ratio: 4 / 3; display: grid; place-items: center; }
+.video img { width: 100%; height: 100%; object-fit: contain; display: block; }
+.video .msg { position: absolute; color: #ddd; font-size: 14px; text-align: center; padding: 20px; }
+.video .hud { position: absolute; left: 10px; top: 10px; display: flex; gap: 6px; flex-wrap: wrap; }
+.video .hud span { background: rgba(0,0,0,.6); color: #fff; font: 12px var(--mono); padding: 2px 7px; border-radius: 5px; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 10px; }
+.tile { background: var(--surface-2); border-radius: 8px; padding: 8px 10px; min-width: 0; }
+.tile .k { font-size: 11px; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tile .v { font: 600 18px/1.3 var(--mono); font-variant-numeric: tabular-nums; }
+.tile .v small { font-size: 11px; color: var(--text-muted); font-weight: 400; }
+.tile.flag .v { display: flex; align-items: center; gap: 6px; }
+.ok { color: var(--good); } .warn { color: var(--warn); } .bad { color: var(--bad); }
+.charts { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+@media (max-width: 700px) { .charts { grid-template-columns: 1fr; } }
+.chart { position: relative; }
+.chart .title { font-size: 12px; color: var(--text-secondary); margin-bottom: 4px; }
+.chart svg { width: 100%; height: 130px; display: block; overflow: visible; }
+.chart .tip { position: absolute; pointer-events: none; background: var(--surface-1); border: 1px solid var(--border);
+  border-radius: 6px; padding: 3px 8px; font: 12px var(--mono); color: var(--text-primary); display: none;
+  white-space: nowrap; box-shadow: 0 2px 8px rgba(0,0,0,.12); }
+details { border-top: 1px solid var(--border); padding: 8px 0; }
+details:first-of-type { border-top: 0; padding-top: 0; }
+summary { cursor: pointer; font-weight: 600; font-size: 13px; padding: 2px 0; }
+.ctl { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 2px 10px; margin: 8px 0; }
+.ctl label { font-size: 13px; color: var(--text-secondary); }
+.ctl output { font: 12px var(--mono); color: var(--text-primary); min-width: 3ch; text-align: right; }
+.ctl input[type=range], .ctl select { grid-column: 1 / -1; width: 100%; accent-color: var(--accent); }
+select, input[type=text], input[type=number] { background: var(--surface-2); color: var(--text-primary);
+  border: 1px solid var(--border); border-radius: 6px; padding: 5px 8px; font: inherit; min-width: 0; }
+.toggles { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 12px; margin: 8px 0; }
+.toggles label { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text-secondary); cursor: pointer; }
+.toggles input { accent-color: var(--accent); }
+button { background: var(--accent); color: var(--accent-ink); border: 0; border-radius: 7px; padding: 7px 14px;
+  font: 600 13px system-ui, sans-serif; cursor: pointer; }
+button.secondary { background: var(--surface-2); color: var(--text-primary); border: 1px solid var(--border); }
+button:disabled { opacity: .5; cursor: not-allowed; }
+.row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 8px 0; }
+.row label { font-size: 13px; color: var(--text-secondary); }
+.progress { height: 6px; background: var(--surface-2); border-radius: 3px; overflow: hidden; margin: 8px 0; }
+.progress div { height: 100%; background: var(--accent); width: 0; transition: width .3s; }
+table { width: 100%; border-collapse: collapse; font: 12px var(--mono); font-variant-numeric: tabular-nums; }
+th, td { padding: 5px 6px; text-align: right; border-bottom: 1px solid var(--grid); white-space: nowrap; }
+th:first-child, td:first-child { text-align: left; }
+th { color: var(--text-secondary); font-weight: 600; font-family: system-ui, sans-serif; }
+.tablewrap { overflow-x: auto; }
+.note { font-size: 12px; color: var(--text-muted); margin: 6px 0 0; overflow-wrap: anywhere; }
+.toast { position: fixed; right: 16px; bottom: 16px; background: var(--surface-1); border: 1px solid var(--border);
+  border-radius: 8px; padding: 10px 14px; box-shadow: 0 4px 16px rgba(0,0,0,.15); display: none; max-width: min(420px, calc(100vw - 32px));
+  overflow-wrap: anywhere; }
+code { font-family: var(--mono); font-size: 12px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>ESP32 Camera Bench</h1>
+  <span id="pill" class="pill connecting"></span>
+  <span id="src" class="src"></span>
+  <span class="spacer"></span>
+  <button class="secondary" id="snap">Save snapshot</button>
+  <button class="secondary" id="theme" title="Toggle light/dark">Theme</button>
+</header>
+<main>
+  <div class="stack">
+    <div class="video" id="videobox">
+      <img id="video" alt="Live camera view with detection overlay">
+      <div class="msg" id="vmsg">Connecting to camera…</div>
+      <div class="hud" id="hud"></div>
+    </div>
+    <section class="card">
+      <h2>Live stream</h2>
+      <div class="tiles" id="tiles"></div>
+    </section>
+    <section class="card">
+      <h2>Last 2 minutes</h2>
+      <div class="charts">
+        <div class="chart" id="c-fps"><div class="title">Frame rate (fps)</div></div>
+        <div class="chart" id="c-gap"><div class="title">Frame interval p95 (ms) · dashed = 250 ms stall line</div></div>
+      </div>
+    </section>
+    <section class="card" id="results-card" hidden>
+      <h2 id="results-title">Benchmark result</h2>
+      <div id="results"></div>
+    </section>
+  </div>
+
+  <div class="stack">
+    <section class="card">
+      <h2>Perception check</h2>
+      <div class="tiles" id="ptiles"></div>
+      <div class="row">
+        <label for="dict">ArUco dictionary</label>
+        <select id="dict"></select>
+      </div>
+      <div class="row">
+        <label for="cb">Chessboard inner corners</label>
+        <input type="text" id="cb" size="6" placeholder="9x6">
+      </div>
+      <div class="toggles">
+        <label><input type="checkbox" id="ov-aruco"> Detect ArUco</label>
+        <label><input type="checkbox" id="ov-grid"> Thirds grid</label>
+      </div>
+      <p class="note">The dictionary must match the printed marker. The workspace's
+        <code>camera_calibration</code> detector defaults to DICT_4X4_50.</p>
+    </section>
+
+    <section class="card">
+      <h2>Benchmark</h2>
+      <div class="row">
+        <label for="bn">Captures</label><input type="number" id="bn" value="30" min="3" max="500" style="width:80px">
+        <button id="run-bench">Run snapshot bench</button>
+      </div>
+      <div class="row">
+        <label for="fs">Sweep sizes</label><input type="text" id="fs" value="6,8,10,11,12,13" style="flex:1">
+        <button id="run-sweep">Run sweep</button>
+      </div>
+      <div class="progress"><div id="prog"></div></div>
+      <p class="note" id="jobnote">The live stream pauses while a benchmark runs. A sweep restores the original resolution when it finishes.</p>
+    </section>
+
+    <section class="card">
+      <h2>Sensor</h2>
+      <div id="controls"><p class="note">Waiting for <code>/status</code>…</p></div>
+    </section>
+  </div>
+</main>
+<div class="toast" id="toast"></div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+const fmt = (v, d = 1) => (v === null || v === undefined || Number.isNaN(v)) ? "–" : Number(v).toFixed(d);
+let state = null, lastConn = null, controlsBuilt = false;
+
+// ---- theme --------------------------------------------------------------
+try { const t = localStorage.getItem("esp32gui-theme"); if (t) document.documentElement.dataset.theme = t; } catch {}
+$("theme").onclick = () => {
+  const dark = getComputedStyle(document.documentElement).colorScheme === "dark";
+  const next = dark ? "light" : "dark";
+  document.documentElement.dataset.theme = next;
+  try { localStorage.setItem("esp32gui-theme", next); } catch {}
+  if (state) drawCharts(state.history);
+};
+
+function toast(msg, bad) {
+  const t = $("toast"); t.textContent = msg; t.style.display = "block";
+  t.style.borderColor = bad ? "var(--bad)" : "var(--border)";
+  clearTimeout(t._h); t._h = setTimeout(() => (t.style.display = "none"), 4000);
+}
+async function post(path, body) {
+  const r = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}) });
+  const j = await r.json();
+  if (!j.ok) throw new Error(j.error || r.statusText);
+  return j;
+}
+
+// ---- status pill --------------------------------------------------------
+const ICONS = {
+  streaming: '<svg viewBox="0 0 10 10"><circle cx="5" cy="5" r="4" fill="currentColor"/></svg>',
+  connecting: '<svg viewBox="0 0 10 10"><circle cx="5" cy="5" r="4" fill="none" stroke="currentColor" stroke-width="2"/></svg>',
+  reconnecting: '<svg viewBox="0 0 10 10"><path d="M5 1a4 4 0 1 1-4 4" fill="none" stroke="currentColor" stroke-width="2"/></svg>',
+  paused: '<svg viewBox="0 0 10 10"><rect x="1.5" y="1" width="2.5" height="8" fill="currentColor"/><rect x="6" y="1" width="2.5" height="8" fill="currentColor"/></svg>',
+};
+const LABELS = { streaming: "Streaming", connecting: "Connecting", reconnecting: "Reconnecting", paused: "Paused for benchmark" };
+
+// ---- tiles --------------------------------------------------------------
+function tile(k, v, unit = "", cls = "") {
+  return `<div class="tile ${cls}"><div class="k">${k}</div><div class="v">${v}${unit ? ` <small>${unit}</small>` : ""}</div></div>`;
+}
+function flag(k, ok, yes, no) {
+  if (ok === null || ok === undefined) return tile(k, "–");
+  const cls = ok ? "ok" : "warn";
+  const icon = ok ? "✓" : "✕";
+  return `<div class="tile flag"><div class="k">${k}</div><div class="v ${cls}">${icon} <span style="font-size:13px">${ok ? yes : no}</span></div></div>`;
+}
+
+function renderLive(s) {
+  const L = s.live, ifm = L.interframe_ms || {};
+  const stallCls = L.stalls_last_min > 0 ? "warn" : "";
+  $("tiles").innerHTML = [
+    tile("Frame rate", fmt(L.fps), "fps"),
+    tile("Resolution", L.resolution || "–"),
+    tile("JPEG size", fmt(L.jpeg_kb), "KB"),
+    tile("Interval p50", fmt(ifm.p50, 0), "ms"),
+    tile("Interval p95", fmt(ifm.p95, 0), "ms"),
+    tile("Interval max", fmt(ifm.max, 0), "ms"),
+    `<div class="tile"><div class="k">Stalls &gt;250 ms</div><div class="v ${stallCls}">${L.stalls_last_min} <small>last min · ${L.stalls_total} total</small></div></div>`,
+    tile("Reconnects", s.reconnects),
+    tile("Sharpness", fmt(L.sharpness, 0), "lap. var"),
+    tile("Brightness", fmt(L.brightness, 0), "/255"),
+    tile("Temporal noise", fmt(L.temporal_noise, 2), "grey σ"),
+    tile("Clipped pixels", fmt(L.clipped_pct, 1), "%"),
+  ].join("");
+  $("ptiles").innerHTML = [
+    flag("ArUco in view", L.aruco_ids.length ? true : (s.overlay.aruco ? false : null),
+         "ids " + L.aruco_ids.join(", "), "none"),
+    tile("Smallest marker edge", fmt(L.aruco_min_edge_px, 0), "px"),
+    tile("ArUco detect rate", L.aruco_rate == null ? "–" : Math.round(L.aruco_rate * 100), "% recent"),
+    flag("Chessboard", L.chessboard, "found", "not found"),
+  ].join("");
+  $("hud").innerHTML = L.resolution
+    ? `<span>${L.resolution}</span><span>${fmt(L.fps)} fps</span>${L.aruco_ids.length ? `<span>ArUco ${L.aruco_ids.join(",")}</span>` : ""}`
+    : "";
+}
+
+// ---- charts: one series each, one axis, hover crosshair ------------------
+function lineChart(el, pts, { yMin = 0, ref = null, unit = "" }) {
+  const W = el.clientWidth || 300, H = 130, padL = 34, padR = 8, padT = 8, padB = 18;
+  const css = getComputedStyle(document.documentElement);
+  const c = (n) => css.getPropertyValue(n).trim();
+  let svg = el.querySelector("svg");
+  if (!svg) {
+    svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    el.appendChild(svg);
+    const tip = document.createElement("div"); tip.className = "tip"; el.appendChild(tip);
+    svg.addEventListener("mousemove", (e) => hover(el, e));
+    svg.addEventListener("mouseleave", () => { el.querySelector(".tip").style.display = "none"; const x = svg.querySelector(".xh"); if (x) x.remove(); });
+  }
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+  const vals = pts.map((p) => p.v).filter((v) => v != null);
+  let yMax = Math.max(...vals, ref || 0, 1) * 1.15;
+  const t0 = pts.length ? pts[0].t : 0, t1 = pts.length ? Math.max(pts[pts.length - 1].t, t0 + 1) : 1;
+  const X = (t) => padL + ((t - t0) / (t1 - t0)) * (W - padL - padR);
+  const Y = (v) => padT + (1 - (v - yMin) / (yMax - yMin)) * (H - padT - padB);
+  const ticks = [0, 0.5, 1].map((f) => yMin + f * (yMax - yMin));
+  let g = ticks.map((v) => `<line x1="${padL}" x2="${W - padR}" y1="${Y(v)}" y2="${Y(v)}" stroke="${c("--grid")}" stroke-width="1"/>
+    <text x="${padL - 6}" y="${Y(v) + 4}" text-anchor="end" font-size="10" fill="${c("--text-muted")}">${v.toFixed(0)}</text>`).join("");
+  if (ref != null) g += `<line x1="${padL}" x2="${W - padR}" y1="${Y(ref)}" y2="${Y(ref)}" stroke="${c("--text-muted")}" stroke-dasharray="4 4" stroke-width="1"/>`;
+  g += `<text x="${padL}" y="${H - 3}" font-size="10" fill="${c("--text-muted")}">−${Math.round(t1 - t0)} s</text>
+        <text x="${W - padR}" y="${H - 3}" font-size="10" text-anchor="end" fill="${c("--text-muted")}">now</text>`;
+  // A null point (stream paused for a benchmark) breaks the line rather than bridging it.
+  let d = "", pen = false;
+  for (const p of pts) {
+    if (p.v == null) { pen = false; continue; }
+    d += `${pen ? "L" : "M"}${X(p.t).toFixed(1)},${Y(p.v).toFixed(1)}`; pen = true;
+  }
+  g += `<path d="${d}" fill="none" stroke="${c("--series-1")}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`;
+  svg.innerHTML = g;
+  el._chart = { pts, X, Y, padT, H, padB, unit, color: c("--series-1"), surface: c("--surface-1") };
+}
+function hover(el, e) {
+  const ch = el._chart; if (!ch || !ch.pts.length) return;
+  const svg = el.querySelector("svg"), r = svg.getBoundingClientRect();
+  const vb = svg.viewBox.baseVal, x = ((e.clientX - r.left) / r.width) * vb.width;
+  let best = null, bd = Infinity;
+  for (const p of ch.pts) { if (p.v == null) continue; const dd = Math.abs(ch.X(p.t) - x); if (dd < bd) { bd = dd; best = p; } }
+  if (!best) return;
+  let xh = svg.querySelector(".xh");
+  if (!xh) { xh = document.createElementNS("http://www.w3.org/2000/svg", "g"); xh.setAttribute("class", "xh"); svg.appendChild(xh); }
+  const px = ch.X(best.t), py = ch.Y(best.v);
+  xh.innerHTML = `<line x1="${px}" x2="${px}" y1="${ch.padT}" y2="${ch.H - ch.padB}" stroke="${ch.color}" stroke-opacity=".35"/>
+    <circle cx="${px}" cy="${py}" r="4" fill="${ch.color}" stroke="${ch.surface}" stroke-width="2"/>`;
+  const tip = el.querySelector(".tip"), ago = Math.round(ch.pts[ch.pts.length - 1].t - best.t);
+  tip.textContent = `${best.v.toFixed(1)} ${ch.unit} · ${ago ? ago + " s ago" : "now"}`;
+  tip.style.display = "block";
+  const left = (px / vb.width) * r.width;
+  tip.style.left = Math.min(Math.max(0, left - tip.offsetWidth / 2), r.width - tip.offsetWidth) + "px";
+  tip.style.top = "0px";
+}
+function drawCharts(h) {
+  lineChart($("c-fps"), h.map((p) => ({ t: p.t, v: p.fps })), { unit: "fps" });
+  lineChart($("c-gap"), h.map((p) => ({ t: p.t, v: p.interframe_p95 })), { ref: 250, unit: "ms" });
+}
+
+// ---- sensor controls ----------------------------------------------------
+const OPT = (arr) => arr.map((l, i) => [i, l]);
+const GROUPS = [
+  ["Image", [
+    { v: "framesize", l: "Resolution", t: "select" },
+    { v: "quality", l: "JPEG quality (lower = better, bigger)", t: "range", min: 4, max: 63 },
+    { v: "brightness", l: "Brightness", t: "range", min: -2, max: 2 },
+    { v: "contrast", l: "Contrast", t: "range", min: -2, max: 2 },
+    { v: "saturation", l: "Saturation", t: "range", min: -2, max: 2 },
+    { v: "special_effect", l: "Effect", t: "select", o: OPT(["None", "Negative", "Grayscale", "Red tint", "Green tint", "Blue tint", "Sepia"]) },
+  ]],
+  ["Exposure & gain", [
+    { v: "aec", l: "Auto exposure", t: "bool" }, { v: "aec2", l: "AEC DSP", t: "bool" },
+    { v: "ae_level", l: "AE level", t: "range", min: -2, max: 2 },
+    { v: "aec_value", l: "Manual exposure", t: "range", min: 0, max: 1200 },
+    { v: "agc", l: "Auto gain", t: "bool" },
+    { v: "agc_gain", l: "Manual gain", t: "range", min: 0, max: 30 },
+    { v: "gainceiling", l: "Gain ceiling", t: "select", o: OPT(["2x", "4x", "8x", "16x", "32x", "64x", "128x"]) },
+  ]],
+  ["White balance", [
+    { v: "awb", l: "Auto WB", t: "bool" }, { v: "awb_gain", l: "AWB gain", t: "bool" },
+    { v: "wb_mode", l: "WB mode", t: "select", o: OPT(["Auto", "Sunny", "Cloudy", "Office", "Home"]) },
+  ]],
+  ["Corrections & orientation", [
+    { v: "lenc", l: "Lens correction", t: "bool" }, { v: "raw_gma", l: "Gamma", t: "bool" },
+    { v: "bpc", l: "Black pixel", t: "bool" }, { v: "wpc", l: "White pixel", t: "bool" },
+    { v: "dcw", l: "Downsize (DCW)", t: "bool" }, { v: "hmirror", l: "H-mirror", t: "bool" },
+    { v: "vflip", l: "V-flip", t: "bool" }, { v: "colorbar", l: "Colour bar test", t: "bool" },
+    { v: "led_intensity", l: "LED", t: "range", min: 0, max: 255 },
+  ]],
+];
+
+async function setControl(v, val) {
+  try { await post("/api/control", { var: v, val }); }
+  catch (e) { toast(`${v}: ${e.message}`, true); }
+}
+
+function buildControls(st, names) {
+  const box = $("controls"); box.innerHTML = "";
+  GROUPS.forEach(([title, items], gi) => {
+    const present = items.filter((c) => c.v in st);
+    if (!present.length) return;
+    const det = document.createElement("details"); if (gi === 0) det.open = true;
+    det.innerHTML = `<summary>${title}</summary>`;
+    const tg = document.createElement("div"); tg.className = "toggles";
+    for (const c of present) {
+      const id = "ctl-" + c.v;
+      if (c.t === "bool") {
+        const lab = document.createElement("label");
+        lab.innerHTML = `<input type="checkbox" id="${id}"> ${c.l}`;
+        lab.querySelector("input").onchange = (e) => setControl(c.v, e.target.checked ? 1 : 0);
+        tg.appendChild(lab);
+        continue;
+      }
+      const row = document.createElement("div"); row.className = "ctl";
+      if (c.t === "range") {
+        row.innerHTML = `<label for="${id}">${c.l}</label><output id="${id}-o"></output>
+          <input type="range" id="${id}" min="${c.min}" max="${c.max}" step="1">`;
+        const inp = row.querySelector("input");
+        inp.oninput = () => (row.querySelector("output").textContent = inp.value);
+        inp.onchange = () => setControl(c.v, +inp.value);
+      } else {
+        const opts = c.o || Object.entries(names).map(([k, n]) => [k, n]);
+        row.innerHTML = `<label for="${id}">${c.l}</label><span></span>
+          <select id="${id}">${opts.map(([k, n]) => `<option value="${k}">${c.v === "framesize" ? `${k} · ${n}` : n}</option>`).join("")}</select>`;
+        row.querySelector("select").onchange = (e) => setControl(c.v, +e.target.value);
+      }
+      det.appendChild(row);
+    }
+    if (tg.children.length) det.appendChild(tg);
+    box.appendChild(det);
+  });
+  controlsBuilt = true;
+}
+function syncControls(st) {
+  for (const [k, val] of Object.entries(st)) {
+    const el = $("ctl-" + k);
+    if (!el || el === document.activeElement) continue;
+    if (el.type === "checkbox") el.checked = !!val; else el.value = val;
+    const o = $("ctl-" + k + "-o"); if (o) o.textContent = val;
+  }
+}
+
+// ---- overlay ------------------------------------------------------------
+let overlayInit = false;
+function initOverlay(s) {
+  $("dict").innerHTML = s.aruco_dicts.map((d) => `<option>${d}</option>`).join("");
+  $("dict").value = s.overlay.aruco_dict; $("cb").value = s.overlay.chessboard || "";
+  $("ov-aruco").checked = s.overlay.aruco; $("ov-grid").checked = s.overlay.grid;
+  const send = (b) => post("/api/overlay", b).catch((e) => toast(e.message, true));
+  $("dict").onchange = (e) => send({ aruco_dict: e.target.value });
+  $("cb").onchange = (e) => send({ chessboard: e.target.value.trim() || null });
+  $("ov-aruco").onchange = (e) => send({ aruco: e.target.checked });
+  $("ov-grid").onchange = (e) => send({ grid: e.target.checked });
+  overlayInit = true;
+}
+
+// ---- benchmark ----------------------------------------------------------
+$("run-bench").onclick = () => post("/api/job", { kind: "bench", n: +$("bn").value }).catch((e) => toast(e.message, true));
+$("run-sweep").onclick = () => post("/api/job", {
+  kind: "sweep", n: Math.max(3, Math.round(+$("bn").value / 3)),
+  framesizes: $("fs").value.split(",").map((x) => +x.trim()).filter((x) => !Number.isNaN(x)),
+}).catch((e) => toast(e.message, true));
+$("snap").onclick = () => post("/api/snapshot").then((j) => toast("Saved " + j.path)).catch((e) => toast(e.message, true));
+
+let shownResult = null;
+function renderJob(job) {
+  $("prog").style.width = Math.round((job.progress || 0) * 100) + "%";
+  $("run-bench").disabled = $("run-sweep").disabled = job.running || (state && state.source.kind !== "http");
+  if (job.running) $("jobnote").textContent = `Running ${job.kind}… ${Math.round(job.progress * 100)}%`;
+  else if (job.error) $("jobnote").innerHTML = `<span class="bad">✕ ${esc(job.error)}</span>`;
+  else if (job.result) $("jobnote").textContent = `Finished ${job.kind} at ${job.finished_utc}. Report: ${job.result.meta.report}`;
+  if (job.result && job.result !== shownResult && !job.running) {
+    shownResult = job.result; renderResult(job.result);
+  }
+}
+function renderResult(r) {
+  $("results-card").hidden = false;
+  const s = (o, k, d = 0) => (o && o[k] != null ? fmt(o[k], d) : "–");
+  if (r.sweep) {
+    $("results-title").textContent = "Resolution sweep (HTTP snapshots)";
+    $("results").innerHTML = `<div class="tablewrap"><table><thead><tr>
+      <th>Framesize</th><th>Resolution</th><th>OK</th><th>p50 ms</th><th>p95 ms</th><th>Snap fps</th><th>KB</th><th>Sharpness</th><th>Noise σ</th><th>ArUco</th><th>Chessboard</th></tr></thead><tbody>
+      ${r.sweep.map((x) => x.error ? `<tr><td>${x.framesize}</td><td colspan="10" class="bad" style="text-align:left;white-space:normal">✕ ${esc(x.error)}</td></tr>` :
+      `<tr><td>${x.framesize} · ${esc(x.name)}</td><td>${x.resolutions.join(",") || "–"}</td><td>${x.ok}/${x.requested}</td>
+      <td>${s(x.latency_ms, "p50")}</td><td>${s(x.latency_ms, "p95")}</td><td>${fmt(x.effective_fps)}</td><td>${s(x.jpeg_kb, "mean", 1)}</td>
+      <td>${s(x.sharpness, "mean")}</td><td>${fmt(x.temporal_noise, 2)}</td>
+      <td>${x.aruco_detect_rate == null ? "–" : Math.round(x.aruco_detect_rate * 100) + "%"}</td>
+      <td>${x.chessboard_detect_rate == null ? "–" : Math.round(x.chessboard_detect_rate * 100) + "%"}</td></tr>`).join("")}
+      </tbody></table></div><p class="note">Snapshot latency is the full HTTP round trip on the host clock. Sharpness is comparable only between rows of the same scene.</p>`;
+  } else {
+    $("results-title").textContent = `Snapshot benchmark · ${r.ok}/${r.requested} captures`;
+    $("results").innerHTML = `<div class="tiles">${[
+      tile("Latency p50", s(r.latency_ms, "p50"), "ms"), tile("Latency p95", s(r.latency_ms, "p95"), "ms"),
+      tile("Latency max", s(r.latency_ms, "max"), "ms"), tile("Snapshot rate", fmt(r.effective_fps), "fps"),
+      tile("Resolution", r.resolutions.join(", ") || "–"), tile("JPEG size", s(r.jpeg_kb, "mean", 1), "KB"),
+      tile("Errors", r.error_count), tile("Temporal noise", fmt(r.temporal_noise, 2), "grey σ"),
+      tile("ArUco rate", r.aruco_detect_rate == null ? "–" : Math.round(r.aruco_detect_rate * 100), "%"),
+      tile("Marker edge p50", s(r.aruco_min_edge_px, "p50"), "px"),
+      tile("Chessboard rate", r.chessboard_detect_rate == null ? "–" : Math.round(r.chessboard_detect_rate * 100), "%"),
+    ].join("")}</div>`;
+  }
+}
+
+// ---- poll ---------------------------------------------------------------
+async function poll() {
+  try {
+    const s = await (await fetch("/api/state")).json();
+    state = s;
+    const conn = s.conn;
+    $("pill").className = "pill " + conn;
+    $("pill").innerHTML = (ICONS[conn] || "") + (LABELS[conn] || conn);
+    $("src").textContent = s.source.kind === "http" ? s.source.stream_url : `UVC index ${s.source.uvc}`;
+    if (conn === "streaming" && lastConn !== "streaming") $("video").src = "/video?" + Date.now();
+    $("vmsg").style.display = conn === "streaming" ? "none" : "block";
+    $("vmsg").textContent = conn === "paused" ? "Stream paused while the benchmark uses /capture…"
+      : conn === "reconnecting" ? `Reconnecting… ${s.last_error}` : "Connecting to camera…";
+    lastConn = conn;
+    if (s.live.resolution) {
+      const [w, h] = s.live.resolution.split("x").map(Number);
+      $("videobox").style.aspectRatio = `${w} / ${h}`;
+    }
+    renderLive(s);
+    drawCharts(s.history);
+    if (!overlayInit) initOverlay(s);
+    if (s.camera_status) {
+      if (!controlsBuilt) buildControls(s.camera_status, s.framesize_names);
+      syncControls(s.camera_status);
+    } else if (s.source.kind === "uvc") {
+      $("controls").innerHTML = '<p class="note">Sensor controls need CameraWebServer. They aren\'t available over UVC.</p>';
+    }
+    renderJob(s.job);
+  } catch (e) {
+    $("pill").className = "pill error"; $("pill").textContent = "✕ GUI server unreachable";
+  }
+  setTimeout(poll, 500);
+}
+poll();
+window.addEventListener("resize", () => state && drawCharts(state.history));
+</script>
+</body>
+</html>

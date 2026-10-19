@@ -183,9 +183,13 @@ def _save(save: Path | None, tag: str, i: int, jpeg: bytes) -> None:
         (save / f"{tag}_{i:02d}.jpg").write_bytes(jpeg)
 
 
-def bench_snapshots(host, n, timeout, aruco, chessboard, save, tag="capture") -> dict:
+def bench_snapshots(host, n, timeout, aruco, chessboard, save, tag="capture",
+                    progress=None) -> dict:
+    """``progress(i, n)``, if given, is called before each capture."""
     latencies, sizes, per_frame, frames, errors = [], [], [], [], []
     for i in range(n):
+        if progress is not None:
+            progress(i, n)
         try:
             jpeg, dt = http_capture(host, timeout)
         except (urllib.error.URLError, TimeoutError, OSError) as e:
@@ -275,30 +279,43 @@ def cmd_info(a) -> dict:
     return {"status": st, "framesize_name": FRAMESIZE_NAMES.get(fs, "?")}
 
 
-def cmd_sweep(a, aruco, chessboard) -> dict:
-    original = http_status(a.host, a.timeout).get("framesize")
+def sweep(host, framesizes, n, timeout, settle, aruco, chessboard, save,
+          progress=None) -> list[dict]:
+    """Bench each framesize in turn, then restore the camera's original one.
+
+    ``progress(step, total)`` counts captures across the whole sweep.
+    """
+    original = http_status(host, timeout).get("framesize")
     results = []
     try:
-        for fs in [int(x) for x in a.framesizes.split(",")]:
+        for k, fs in enumerate(framesizes):
             try:
-                http_control(a.host, "framesize", fs, a.timeout)
+                http_control(host, "framesize", fs, timeout)
             except urllib.error.URLError as e:
                 results.append({"framesize": fs, "error": repr(e)})
                 continue
-            time.sleep(a.settle)
+            time.sleep(settle)
             # Discard frames buffered at the previous size.
             for _ in range(2):
                 try:
-                    http_capture(a.host, a.timeout)
+                    http_capture(host, timeout)
                 except (urllib.error.URLError, OSError):
                     pass
-            r = bench_snapshots(a.host, a.n, a.timeout, aruco, chessboard,
-                                a.save, tag=f"fs{fs}")
+            step = None if progress is None else (
+                lambda i, _n, k=k: progress(k * n + i, len(framesizes) * n))
+            r = bench_snapshots(host, n, timeout, aruco, chessboard, save,
+                                tag=f"fs{fs}", progress=step)
             results.append({"framesize": fs, "name": FRAMESIZE_NAMES.get(fs, "?"), **r})
     finally:
         if original is not None:
-            http_control(a.host, "framesize", original, a.timeout)
-    return {"sweep": results}
+            http_control(host, "framesize", original, timeout)
+    return results
+
+
+def cmd_sweep(a, aruco, chessboard) -> dict:
+    framesizes = [int(x) for x in a.framesizes.split(",")]
+    return {"sweep": sweep(a.host, framesizes, a.n, a.timeout, a.settle,
+                           aruco, chessboard, a.save)}
 
 
 def print_sweep_table(results: list[dict]) -> None:
