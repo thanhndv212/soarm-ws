@@ -35,7 +35,12 @@ webcam to `camera_calibration`. Test it if Wi-Fi numbers disappoint.
 ```bash
 python tools/esp32_camera_gui.py --host 192.168.1.42 --open   # CameraWebServer
 python tools/esp32_camera_gui.py --uvc 1 --open               # S3 flashed as USB webcam
+python tools/esp32_camera_gui.py --uvc 0 --size 640x480       # any USB webcam
 ```
+
+`--uvc` opens any UVC camera, not only the S3. The GUI analyses every frame in Python, so
+its own frame rate drops with frame size: on a generic 1080p webcam it showed about 5 fps at
+1920x1080, 10 at 1280x720 and 19 at 640x480. Pick the size with `--size`.
 
 The GUI is a local web server on `http://127.0.0.1:8000`, and it is the only process that
 owns the camera. It shows:

@@ -13,6 +13,7 @@ glass-to-host lag.
 
     python tools/esp32_camera_gui.py --host 192.168.1.42        # CameraWebServer
     python tools/esp32_camera_gui.py --uvc 1                    # S3 as USB webcam
+    python tools/esp32_camera_gui.py --uvc 0 --size 1280x720    # any USB webcam, smaller frames
     python tools/esp32_camera_mock.py & python tools/esp32_camera_gui.py --host 127.0.0.1:8080
 
 then open http://127.0.0.1:8000. Needs only numpy + opencv-python.
@@ -52,8 +53,9 @@ class Camera:
     """Owns the camera: reads frames, keeps live stats, renders the overlay."""
 
     def __init__(self, host: str | None, stream_url: str | None, uvc: int | None,
-                 timeout: float, save_dir: Path):
+                 timeout: float, save_dir: Path, uvc_size: tuple[int, int] = (0, 0)):
         self.host, self.uvc, self.timeout = host, uvc, timeout
+        self.uvc_size = uvc_size
         self.stream_url = stream_url or (stream_url_for(host) if host else None)
         self.save_dir = save_dir
         self.lock = threading.Lock()
@@ -84,7 +86,7 @@ class Camera:
 
     def _frames(self):
         if self.uvc is not None:
-            yield from probe._uvc_frames(self.uvc, 0, 0)
+            yield from probe._uvc_frames(self.uvc, *self.uvc_size)
         else:
             yield from probe._mjpeg_frames(self.stream_url, self.timeout)
 
@@ -429,6 +431,8 @@ def main(argv=None) -> int:
     src = p.add_mutually_exclusive_group(required=True)
     src.add_argument("--host", help="CameraWebServer address, e.g. 192.168.1.42 or 127.0.0.1:8080")
     src.add_argument("--uvc", type=int, help="OpenCV VideoCapture index (S3 flashed as USB webcam)")
+    p.add_argument("--size", default="", metavar="WxH",
+                   help="request this resolution from a --uvc camera, e.g. 1280x720 (default: the camera's)")
     p.add_argument("--stream-url", help="override the MJPEG URL (default: http://HOST:PORT+1/stream)")
     p.add_argument("--listen", default="127.0.0.1:8000", help="GUI address")
     p.add_argument("--timeout", type=float, default=5.0)
@@ -436,7 +440,12 @@ def main(argv=None) -> int:
     p.add_argument("--open", action="store_true", help="open the GUI in the default browser")
     a = p.parse_args(argv)
 
-    cam = Camera(a.host, a.stream_url, a.uvc, a.timeout, a.save_dir)
+    try:
+        uvc_size = tuple(int(v) for v in a.size.lower().split("x")) if a.size else (0, 0)
+        assert len(uvc_size) == 2
+    except (ValueError, AssertionError):
+        p.error(f"--size must look like 1280x720, got {a.size!r}")
+    cam = Camera(a.host, a.stream_url, a.uvc, a.timeout, a.save_dir, uvc_size)
     jobs = Jobs(cam)
     threading.Thread(target=cam.run, daemon=True).start()
     bind, _, port = a.listen.partition(":")
