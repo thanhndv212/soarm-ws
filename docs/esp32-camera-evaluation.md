@@ -9,8 +9,11 @@ auxiliary view** for grip and placement verification and coarse object presence.
 This evaluation decides whether the board can fill the auxiliary role, and whether it could
 do more.
 
-Tool: [`tools/esp32_camera_probe.py`](../tools/esp32_camera_probe.py). It needs only
-`numpy` and `opencv-python`, and runs on the host that will consume the images.
+Tool: the `camera_calibration` package (`python -m camera_calibration ...`; the
+`camera-calibration` console script once it is installed): the `workbench` GUI and the
+headless `bench` command. They need only `numpy` and `opencv-python`, and run on the host
+that will consume the images. The source is a URI: `esp32:<host>`, `uvc:<index>`,
+`mjpeg:<url>` or `mock:`.
 
 ## 1. Identify the board and firmware
 
@@ -21,11 +24,11 @@ These numbers decide what is achievable.
 
 Pick one transport to test:
 
-| Firmware | How to get it | Probe command |
+| Firmware | How to get it | Source URI |
 |---|---|---|
-| `CameraWebServer` (Wi-Fi, recommended start) | Arduino IDE → *File → Examples → ESP32 → Camera → CameraWebServer*; select your board's `CAMERA_MODEL_*`, enable PSRAM, set SSID | `info`, `bench`, `sweep`, `stream` |
-| USB webcam (UVC) | ESP-IDF `esp-iot-solution` `usb_webcam` example (S3 has native USB); see [§2a](#2a-flash-it-as-a-usb-webcam-uvc) | `uvc --index N` |
-| Any MJPEG URL | — | `stream --url ...` |
+| `CameraWebServer` (Wi-Fi, recommended start) | Arduino IDE → *File → Examples → ESP32 → Camera → CameraWebServer*; select your board's `CAMERA_MODEL_*`, enable PSRAM, set SSID | `esp32:<host>` |
+| USB webcam (UVC) | ESP-IDF `esp-iot-solution` `usb_webcam` example (S3 has native USB); see [§2a](#2a-flash-it-as-a-usb-webcam-uvc) | `uvc:<index>` |
+| Any MJPEG URL | — | `mjpeg:<url>` |
 
 UVC over USB removes Wi-Fi latency and jitter, and makes the S3 look like the existing
 webcam to `camera_calibration`. Test it if Wi-Fi numbers disappoint.
@@ -33,40 +36,44 @@ webcam to `camera_calibration`. Test it if Wi-Fi numbers disappoint.
 ## 2. Explore it in the GUI
 
 ```bash
-python tools/esp32_camera_gui.py --host 192.168.1.42 --open   # CameraWebServer
-python tools/esp32_camera_gui.py --uvc 1 --open               # S3 flashed as USB webcam
-python tools/esp32_camera_gui.py --uvc 0 --size 640x480       # any USB webcam
+cd camera_calibration
+python -m camera_calibration workbench --source esp32:192.168.1.42 --open   # CameraWebServer
+python -m camera_calibration workbench --source uvc:1 --open                # S3 flashed as USB webcam
+python -m camera_calibration workbench --source "uvc:0?size=640x480"        # any USB webcam
 ```
 
-`--uvc` opens any UVC camera, not only the S3. The GUI analyses every frame in Python, so
-its own frame rate drops with frame size: on a generic 1080p webcam it showed about 5 fps at
-1920x1080, 10 at 1280x720 and 19 at 640x480. Pick the size with `--size`.
+`uvc:` opens any UVC camera, not only the S3. Capture, analysis and the preview run on
+separate threads, so slow analysis at large frame sizes lowers the analysis rate, not the
+camera rate.
 
-The GUI is a local web server on `http://127.0.0.1:8000`, and it is the only process that
-owns the camera. It shows:
+The workbench is a local web server on `http://127.0.0.1:8000`, and it is the only process
+that owns the camera. Its **Benchmark** tab shows:
 
-- the live view with ArUco and chessboard detections drawn on it
-- live frame rate, frame-interval p50/p95/max, stalls over 250 ms and reconnects
+- live frame rate, frame-interval p50/p95/max, stalls over 250 ms, and two-minute charts of
+  frame rate and interval p95
 - sharpness, brightness, temporal noise and clipped pixels
-- every CameraWebServer sensor control: resolution, JPEG quality, exposure, gain, white
-  balance, lens correction, mirror/flip and colour bar
-- one-click snapshot benchmark, resolution sweep and stream sweep (live fps, gaps, stalls,
-  and glass-to-host lag with the `/clock` page in view), with the stream paused while they
-  run and the original resolution restored afterwards
+- ArUco IDs, smallest marker edge and detect rate (turn the overlay on in the **Source** tab),
+  and the calibration target's corners
+- one-click stream benchmark, stream sweep, snapshot bench and snapshot sweep (fps, gaps,
+  stalls, and glass-to-host lag with the `/clock` page in view). Snapshot jobs pause the
+  stream while they run, and sweeps restore the original resolution afterwards.
 
-Snapshots and `report.json` files go to `runs/esp32_gui/`. Temporal noise is only
-meaningful when the scene is static.
+The **Source** tab has every CameraWebServer sensor control, grouped: resolution, JPEG
+quality, exposure, gain, white balance, lens correction, mirror/flip and colour bar.
 
-No board yet? `python tools/esp32_camera_mock.py --port 8080` emulates CameraWebServer
-with a synthetic scene: a moving cube with an ArUco tag, a chessboard, and Wi-Fi-like
-latency and stalls. Point the GUI at it with `--host 127.0.0.1:8080`. Its numbers are
-**not** ESP32 measurements.
+Snapshots and `report.json` files go to `runs/workbench/bench_<time>/`. Temporal noise is
+only meaningful when the scene is static.
+
+No board yet? `python -m camera_calibration esp32-mock --port 8080` emulates
+CameraWebServer with a synthetic scene: a moving cube with an ArUco tag, a chessboard, and
+Wi-Fi-like latency and stalls. Open it with `--source esp32:127.0.0.1:8080`. Its numbers
+are **not** ESP32 measurements.
 
 ## 2a. Flash it as a USB webcam (UVC)
 
 Tested on the Freenove ESP32-S3-WROOM CAM (N8R8) with ESP-IDF v5.4.2 and
 `esp-iot-solution`'s `examples/usb/device/usb_webcam` (`usb_device_uvc` 1.3.1, MJPEG only).
-The board config is [`tools/esp32_uvc/sdkconfig.freenove`](../tools/esp32_uvc/sdkconfig.freenove):
+The board config is [`camera_calibration/firmware/esp32_uvc/sdkconfig.freenove`](../camera_calibration/firmware/esp32_uvc/sdkconfig.freenove):
 ESP32-S3-EYE camera pins as a *custom* module (choosing the EYE board pulls in its LCD
 driver), VGA at 30 fps requested, isochronous transfer (works on macOS; bulk is faster but
 has Linux host issues).
@@ -74,7 +81,7 @@ has Linux host issues).
 ```bash
 . ~/esp/esp-idf/export.sh
 cd ~/esp/esp-iot-solution/examples/usb/device/usb_webcam
-cp <soarm-ws>/tools/esp32_uvc/sdkconfig.freenove .
+cp <soarm-ws>/camera_calibration/firmware/esp32_uvc/sdkconfig.freenove .
 D="sdkconfig.defaults;sdkconfig.freenove"
 idf.py -D SDKCONFIG_DEFAULTS="$D" set-target esp32s3
 idf.py -D SDKCONFIG_DEFAULTS="$D" reconfigure build
@@ -92,61 +99,67 @@ cd build && python -m esptool --chip esp32s3 -p /dev/cu.usbmodemXXXX -b 460800 \
 Then move the cable to the **native USB port** (GPIO19/20). It enumerates as
 "ESP32-S3 UVC Camera" (macOS lists it as "UVC CAM1"). The OpenCV index depends on what else
 is attached: with the FaceTime and Continuity cameras present it was index 0. On macOS the
-process that opens it needs camera permission, so run the probe or GUI from Terminal.app,
+process that opens it needs camera permission, so run the workbench or `bench` from Terminal.app,
 not from a sandboxed shell.
 
 The firmware fixes the JPEG quality per size (VGA = 12) and turns on vflip. There are no
-`/control` endpoints in UVC mode, so the GUI's sensor tab doesn't apply. To change size or
+`/control` endpoints in UVC mode, so the ESP32 sensor controls don't apply. To change size or
 quality, rebuild.
 
 **Going back to Wi-Fi:** reflash the CameraWebServer sketch, or write a saved merged image
 at `0x0` in download mode. A merged image built from the sketch contains the Wi-Fi
 credentials: keep it out of the repo.
 
-## 3. Run the probe from the command line
+## 3. Run the benchmarks from the command line
+
+`bench` runs the same jobs as the Benchmark tab, without the GUI. It prints the result and
+writes `report.json` plus sample frames to `--out/bench_<time>/`.
 
 ```bash
-H=192.168.1.42                       # IP printed on the ESP32 serial monitor
-P=tools/esp32_camera_probe.py
-python $P info  --host $H                                     # sensor settings
-python $P sweep --host $H --framesizes 6,8,10,11,12,13 -n 20  --json runs/esp32/sweep.json
-python $P bench --host $H -n 100 --save runs/esp32/frames     --json runs/esp32/bench_vga.json
-python $P stream --url http://$H:81/stream --duration 60      --json runs/esp32/stream.json
+cd camera_calibration
+S=esp32:192.168.1.42                 # IP printed on the ESP32 serial monitor
+B="python -m camera_calibration bench --source $S --out runs/esp32"
+$B --info                                          # sensor settings
+$B --snapshots 20 --sweep --framesizes 6,8,10,11,12,13   # /capture latency per size
+$B --snapshots 100 --aruco DICT_4X4_50             # /capture latency at the current size
+$B --duration 60                                   # live stream: fps, gaps, stalls
 ```
 
-**Live-stream lag per resolution, without switching by hand.** `sweep` times `/capture`
-snapshots, which is not what the live view feels like. `stream-sweep` sets each framesize,
-records the MJPEG stream for `--duration` seconds, then analyses it, so the measurement
-doesn't throttle the stream. It reports fps, frame-gap p50/p95/max and stalls per size, and
+**Live-stream lag per resolution, without switching by hand.** The snapshot sweep times
+`/capture` stills, which is not what the live view feels like. `--sweep` without
+`--snapshots` sets each framesize, records the stream for `--duration` seconds and times
+every frame on arrival, while sampling frames for quality so the analysis doesn't throttle
+the stream. It reports fps, frame-gap p50/p95/max and stalls per size, and
 restores the original size afterwards. For **glass-to-host lag**, open the lag clock
 full-screen on the machine that runs the benchmark: a marker whose ID changes every 100 ms,
 driven by that machine's clock. Point the camera at it, keep other markers out of view, and
 add `--clock`:
 
 ```bash
-python $P clock-page --out runs/esp32/clock.html     # open full-screen; the GUI also serves /clock
-python $P stream-sweep --host $H --clock --duration 10 --json runs/esp32/stream_sweep.json
+python -m camera_calibration clock-page --out runs/esp32/clock.html   # open full-screen; the workbench also serves /clock
+$B --sweep --clock --duration 10
 ```
 
 Each lag sample is quantised to ±50 ms, but the median is not. The lag includes the screen's
 own display delay (about one refresh), so it is an upper bound on the camera's lag. If the
 marker's ID doesn't cycle, for example a printed tag, the run is flagged and gives no lag.
-The GUI runs the same thing with **Run stream sweep** (tick *Measure lag*).
+The workbench runs the same thing as **Stream sweep** (tick *Measure lag*).
 
-Run `bench`/`stream` with these scenes, keeping each one static:
+Run the snapshot and stream benchmarks with these scenes, keeping each one static:
 
 1. **Workspace view**: camera at its intended side-view mount, looking at the gripper and cube.
-2. **Marker at working distance**: a printed `DICT_4X4_50` marker (`--aruco-dict` must
+2. **Marker at working distance**: a printed `DICT_4X4_50` marker (`--aruco` must
    match the printed one) on the cube. Read `aruco_detect_rate` and `aruco_min_edge_px`.
    Keep the marker away from the frame edge: OpenCV rejects noisy candidates near the border.
-3. **Chessboard**: `--chessboard 9x6` (match `camera_calibration`). Tells you whether
+3. **Calibration target**: `--target` (ChArUco by default; `chessboard?inner=9x6&square=0.025`
+   for the old board). Read `target_detect_rate`. Tells you whether
    intrinsic calibration at this resolution is practical.
 4. **Lighting**: repeat (1) under the dimmest lab lighting. Watch `brightness`, `clipped_pct`
    and `temporal_noise`.
-5. **Soak**: `stream --duration 600`. Count `stalls_over_250ms` and errors, and note whether
+5. **Soak**: `--duration 600`. Count `stalls_over_250ms` and errors, and note whether
    the board browns out or overheats. Power it from a solid 5 V supply, not a laptop hub port.
 
-`sweep` restores the original framesize when it finishes. The framesize enum differs
+A sweep restores the original framesize when it finishes. The framesize enum differs
 between esp32-camera releases, so trust the decoded `resolutions` field, not the name.
 
 ## 4. What to look at
@@ -158,7 +171,7 @@ between esp32-camera releases, so trust the decoded `resolutions` field, not the
 | `error_count`, reconnects | `CameraSource` must time out and reconnect cleanly | Recovers without a power cycle |
 | `aruco_detect_rate`, `aruco_min_edge_px` | Tag visibility for presence and coarse pose | Stable detection at working distance |
 | `sharpness`, `temporal_noise`, `clipped_pct` | Image quality and lighting margin | Compare across sizes and settings, not absolute |
-| `chessboard_detect_rate` | Calibratability at runtime resolution | Board detected across the working area |
+| `target_detect_rate` | Calibratability at runtime resolution | Board detected across the working area |
 
 These gates are proposed, not measured. Set the numbers once the first run gives a baseline.
 Keep the resolution, JPEG quality, AEC/AGC and white balance fixed between calibration and

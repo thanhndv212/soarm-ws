@@ -28,7 +28,7 @@ Smaller problems found while reading:
   differ from the printed one.
 - The README says Apache-2.0 while `pyproject.toml` and `LICENSE` say MIT.
 
-### `tools/esp32_camera_gui.py` + `.html` (this branch): a real GUI, but for one job
+### The ESP32 GUI (`tools/esp32_camera_gui.py` + `.html`, since removed): a real GUI, but for one job
 
 - A stdlib HTTP server plus one HTML page (no extra dependencies).
 - **One camera owner thread**, with automatic reconnect.
@@ -43,7 +43,7 @@ Smaller problems found while reading:
 - It can't calibrate anything.
 
 **Conclusion:** the calibration logic is in `camera_calibration`, and the usable GUI design
-is in `tools/`. The workbench joins them: a GUI-free core in `camera_calibration`, and the
+was in `tools/`. The workbench joins them: a GUI-free core in `camera_calibration`, and the
 ESP32 GUI's server and page turned into a general front-end.
 
 ## 2. Design
@@ -208,7 +208,7 @@ authorization error.
 |---|---|---|
 | 0. Clean up | Fix the `argparse` import, the RPE mismatch, the README license, and the default dictionary; init the submodule in this worktree | Existing tests pass; `capture` behaves as before |
 | 1. Core | `sources/` (uvc with name lookup, mjpeg, esp32, dir, mock), `capture.py` three-stage loop, `artifact.py` | Tests on `mock:` and `dir:` in CI. On the generic webcam, camera fps at 1080p is close to what the probe measured, not 5 |
-| 2. Workbench + intrinsics | Port the ESP32 GUI server and page onto the core (feature parity: live view, stats, sensor controls, benchmark). Add targets with ChArUco, the Intrinsics procedure with coverage and held-out check, and `solve --from dir:` | Calibrate the USB webcam and the ESP32 from the GUI; held-out error reported; `tools/esp32_camera_gui.py` becomes a thin wrapper |
+| 2. Workbench + intrinsics | Port the ESP32 GUI server and page onto the core (feature parity: live view, stats, sensor controls, benchmark). Add targets with ChArUco, the Intrinsics procedure with coverage and held-out check, and `solve --from dir:` | Calibrate the USB webcam and the ESP32 from the GUI; held-out error reported; the ESP32 GUI's benchmarks run in the workbench |
 | 3. Camera to base | Extrinsic procedure, board placement file, 3-D check view, camera-moved check | Perception plan Stage 2 exit evidence |
 | 4. Robot and multi-camera | Hand-eye via `soarm_sdk`, camera to camera, time offset | Wrist or ESP32 view expressed in the base frame with a measured error |
 
@@ -216,15 +216,27 @@ authorization error.
 
 **Phase 2 result (2026-10-20):** partly done in `camera_calibration`. Done: `targets/` (ChArUco by default, `charuco?squares=7x5&square=0.03&marker=0.022&dict=DICT_4X4_50`, which prints at 230x180 mm and fits A4 landscape; chessboard too), `procedures/intrinsics.py` (coverage grid, auto-accept when the view is steady and new, every fifth view held out and reported), `workbench/` (server and page on `CaptureLoop`), and the `workbench`, `solve --from dir:` and `target` subcommands. Against the mock camera's ground truth, detected corners are within 0.08 px at 1080p and 0.3 px at VGA. Before the fix, ChArUco corners were biased by 0.9 px because `cornerSubPix` reached into the markers. A calibration from the page recovers fx within 0.1% (held-out error 0.03 px). The USB webcam runs in the workbench at 1080p: 20 fps camera, 20 fps ChArUco analysis. Not done yet:
 - A real calibration of the webcam and the ESP32, which needs a printed board.
-- The benchmark jobs and the ESP32 GUI as a thin wrapper.
+- ~~The benchmark jobs and the ESP32 GUI as a thin wrapper.~~ Done: the benchmarks moved
+  into the workbench rather than being wrapped (below).
+
+**ESP32 GUI port (2026-10-20):** everything in `soarm-ws/tools` now lives in
+`camera_calibration`, and `tools/` is gone. `camera_calibration.bench` holds the metrics,
+the lag clock and the stream, snapshot and sweep benchmarks; stream timing comes from
+`CaptureLoop`'s per-frame receive times. The workbench page has a **Benchmark** tab: live
+stream health and image-quality tiles, two-minute charts, and the four jobs, each writing
+`report.json`. The **Source** tab has the ArUco/grid overlay and the full grouped ESP32
+sensor controls. The CLI gained `bench`, `clock-page` and `esp32-mock`, and the UVC firmware
+config moved to `camera_calibration/firmware/esp32_uvc/`. Against the mock CameraWebServer,
+a stream sweep from the page gave 22.4 fps at QVGA and 14.0 at VGA, and it restored the
+original size.
 
 Phases 0–2 are self-contained in `camera_calibration`. Phase 3 needs the board-to-base
 measurement. Phase 4 needs the arm.
 
 ## 4. Decisions to settle
 
-1. **Location.** Recommended: `camera_calibration` (the owning submodule), with the ESP32
-   tools staying in `soarm-ws/tools` as thin wrappers. The alternative is a new package,
+1. **Location.** Settled: `camera_calibration` (the owning submodule) holds everything,
+   ESP32 tools included; `soarm-ws/tools` was removed. The alternative is a new package,
    which adds install order and another submodule.
 2. **Default target for new calibrations.** ChArUco (recommended) or chessboard. Either
    way, print a board with measured square size.
