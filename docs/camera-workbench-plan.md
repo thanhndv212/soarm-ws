@@ -212,6 +212,8 @@ authorization error.
 | 3. Camera to base | Extrinsic procedure, board placement file, 3-D check view, camera-moved check | Perception plan Stage 2 exit evidence |
 | 4. Robot and multi-camera | Hand-eye via `soarm_sdk`, camera to camera, time offset | Wrist or ESP32 view expressed in the base frame with a measured error |
 
+**Phase 1 result (2026-10-20):** done in `camera_calibration` (`sources/`, `capture.py`, `artifact.py`; 13 new tests on `mock:` and `dir:`). On the generic webcam via `uvc:name=USB Camera`: 1080p camera rate 20 fps, the camera's own rate in room light (was 4-5 in the old GUI); chessboard analysis 20 fps at 35 ms/frame with downscaled search, against 5 fps for a full-resolution search, which no longer slows the camera. Name lookup picked the right camera with three attached (USB, FaceTime, iPhone).
+
 Phases 0–2 are self-contained in `camera_calibration`. Phase 3 needs the board-to-base
 measurement. Phase 4 needs the arm.
 
