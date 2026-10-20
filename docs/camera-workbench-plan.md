@@ -214,6 +214,10 @@ authorization error.
 
 **Phase 1 result (2026-10-20):** done in `camera_calibration` (`sources/`, `capture.py`, `artifact.py`; 13 new tests on `mock:` and `dir:`). On the generic webcam via `uvc:name=USB Camera`: 1080p camera rate 20 fps, the camera's own rate in room light (was 4-5 in the old GUI); chessboard analysis 20 fps at 35 ms/frame with downscaled search, against 5 fps for a full-resolution search, which no longer slows the camera. Name lookup picked the right camera with three attached (USB, FaceTime, iPhone).
 
+**Phase 2 result (2026-10-20):** partly done in `camera_calibration`. Done: `targets/` (ChArUco by default, `charuco?squares=7x5&square=0.03&marker=0.022&dict=DICT_4X4_50`, which prints at 230x180 mm and fits A4 landscape; chessboard too), `procedures/intrinsics.py` (coverage grid, auto-accept when the view is steady and new, every fifth view held out and reported), `workbench/` (server and page on `CaptureLoop`), and the `workbench`, `solve --from dir:` and `target` subcommands. Against the mock camera's ground truth, detected corners are within 0.08 px at 1080p and 0.3 px at VGA. Before the fix, ChArUco corners were biased by 0.9 px because `cornerSubPix` reached into the markers. A calibration from the page recovers fx within 0.1% (held-out error 0.03 px). The USB webcam runs in the workbench at 1080p: 20 fps camera, 20 fps ChArUco analysis. Not done yet:
+- A real calibration of the webcam and the ESP32, which needs a printed board.
+- The benchmark jobs and the ESP32 GUI as a thin wrapper.
+
 Phases 0–2 are self-contained in `camera_calibration`. Phase 3 needs the board-to-base
 measurement. Phase 4 needs the arm.
 
@@ -232,5 +236,6 @@ measurement. Phase 4 needs the arm.
 - Mapping a camera name to an OpenCV index on macOS: AVFoundation's order usually follows
   `system_profiler SPCameraDataType`, but this needs a test with 3+ cameras attached.
 - Which `CAP_PROP_*` controls (focus, exposure) the generic webcam honours through
-  AVFoundation.
+  AVFoundation. The probe in `UVCSource` found none on the generic webcam, so the workbench
+  shows no controls for it. Setting them may need a UVC-level tool, not OpenCV.
 - viser image-streaming rate, if it's used for the 3-D view.
